@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AgentMemOS · Memory Atlas</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=20260501-i18n">
+  <link rel="stylesheet" href="/static/styles.css?v=20260502-trace-explain">
 </head>
 <body>
   <header class="topbar">
@@ -22,6 +22,7 @@
       <a href="#memories" data-i18n="nav.memories">Memories</a>
       <a href="#events" data-i18n="nav.events">Events</a>
       <a href="#traces" data-i18n="nav.traces">Traces</a>
+      <a href="#traceExplain" data-i18n="nav.explain">Explain</a>
       <a href="/docs" data-i18n="nav.docs">API Docs</a>
     </nav>
     <div class="top-actions">
@@ -168,6 +169,16 @@
       </div>
     </section>
 
+    <section class="trace-explain-band" id="traceExplain">
+      <div class="panel">
+        <div class="panel-head">
+          <span data-i18n="traceExplain.title">Trace explain</span>
+          <span id="traceExplainId">no trace selected</span>
+        </div>
+        <div id="traceExplainBody" class="trace-explain-empty" data-i18n="traceExplain.empty">Select a retrieval trace to inspect scoring, selected memories, and filtered memory reasons.</div>
+      </div>
+    </section>
+
     <section class="logs">
       <div class="panel" id="events">
         <div class="panel-head">
@@ -186,6 +197,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=20260501-i18n"></script>
+  <script src="/static/app.js?v=20260502-trace-explain"></script>
 </body>
 </html>

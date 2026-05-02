@@ -5,6 +5,7 @@ const state = {
   memories: [],
   events: [],
   traces: [],
+  selectedTraceId: null,
   lang: localStorage.getItem("agentmemos.lang") || "en",
 };
 
@@ -14,6 +15,7 @@ const translations = {
     "nav.memories": "Memories",
     "nav.events": "Events",
     "nav.traces": "Traces",
+    "nav.explain": "Explain",
     "nav.docs": "API Docs",
     "main.title": "Memory board",
     "overview.title": "Overview",
@@ -41,6 +43,16 @@ const translations = {
     "sections.memories": "Memories",
     "sections.events": "Events",
     "sections.traces": "Traces",
+    "traceExplain.title": "Trace explain",
+    "traceExplain.empty": "Select a retrieval trace to inspect scoring, selected memories, and filtered memory reasons.",
+    "traceExplain.selected": "Selected",
+    "traceExplain.candidate": "Candidate",
+    "traceExplain.filtered": "Filtered",
+    "traceExplain.candidates": "Scored candidates",
+    "traceExplain.noScored": "No scored candidates recorded for this trace.",
+    "traceExplain.noFiltered": "No filtered memories for this trace.",
+    "traceExplain.score": "score",
+    "traceExplain.parts": "score parts",
     "legend.title": "Quick guide",
     "legend.intro": "<strong>AgentMemOS observes three things:</strong> events come in, memories are formed, traces explain retrieval.",
     "legend.memory.title": "Memory",
@@ -68,6 +80,7 @@ const translations = {
     traces: "traces",
     selected: "selected",
     filtered: "filtered",
+    inspect: "inspect",
     "empty.readings": "No readings yet.",
     "empty.memories": "No memories match this chart.",
     "empty.events": "No agent events yet.",
@@ -82,6 +95,7 @@ const translations = {
     "nav.memories": "记忆",
     "nav.events": "事件",
     "nav.traces": "追踪",
+    "nav.explain": "解释",
     "nav.docs": "接口文档",
     "main.title": "Memory 看板",
     "overview.title": "概览",
@@ -109,6 +123,16 @@ const translations = {
     "sections.memories": "记忆",
     "sections.events": "事件",
     "sections.traces": "检索追踪",
+    "traceExplain.title": "检索解释",
+    "traceExplain.empty": "选择一条检索追踪，查看评分、选中记忆和过滤原因。",
+    "traceExplain.selected": "已选中",
+    "traceExplain.candidate": "候选",
+    "traceExplain.filtered": "已过滤",
+    "traceExplain.candidates": "候选评分",
+    "traceExplain.noScored": "这条追踪没有记录候选评分。",
+    "traceExplain.noFiltered": "这条追踪没有过滤记忆。",
+    "traceExplain.score": "分数",
+    "traceExplain.parts": "分项",
     "legend.title": "快速说明",
     "legend.intro": "<strong>AgentMemOS 主要观测三类对象：</strong>事件进入系统，事件沉淀为记忆，追踪记录解释检索过程。",
     "legend.memory.title": "Memory（记忆）",
@@ -136,6 +160,7 @@ const translations = {
     traces: "条追踪",
     selected: "选中",
     filtered: "过滤",
+    inspect: "查看",
     "empty.readings": "暂无读数。",
     "empty.memories": "没有匹配当前筛选的记忆。",
     "empty.events": "暂无 agent 事件。",
@@ -173,6 +198,7 @@ function applyLanguage() {
     renderMemories();
     renderEvents();
     renderTraces();
+    renderTraceExplain();
   }
 }
 
@@ -229,6 +255,10 @@ function memoryTags(memory) {
   ].join("");
 }
 
+function memoryById(memoryId) {
+  return state.memories.find((memory) => memory.memory_id === memoryId);
+}
+
 function renderMemories() {
   const list = $("memoryList");
   const scope = $("scopeFilter").value;
@@ -261,6 +291,97 @@ function renderMemories() {
     .join("");
 }
 
+function scorePartsHtml(scoreParts) {
+  const entries = Object.entries(scoreParts || {});
+  if (!entries.length) return "";
+  const max = Math.max(...entries.map(([, value]) => Number(value) || 0), 0.001);
+  return entries
+    .map(([name, value]) => `
+      <div class="score-part">
+        <span>${escapeHtml(name)}</span>
+        <div class="bar-track compact-track"><div class="bar-fill" style="width:${((Number(value) || 0) / max) * 100}%"></div></div>
+        <strong>${Number(value).toFixed(4)}</strong>
+      </div>
+    `)
+    .join("");
+}
+
+function renderTraceExplain(trace = state.traces.find((item) => item.trace_id === state.selectedTraceId)) {
+  const body = $("traceExplainBody");
+  if (!body) return;
+  if (!trace) {
+    setText("traceExplainId", state.lang === "zh" ? "未选择 trace" : "no trace selected");
+    body.className = "trace-explain-empty";
+    body.textContent = t("traceExplain.empty");
+    return;
+  }
+
+  state.selectedTraceId = trace.trace_id;
+  setText("traceExplainId", trace.trace_id);
+  body.className = "trace-explain";
+  const scored = trace.scored_memories || [];
+  const filtered = trace.filtered_memories || [];
+  body.innerHTML = `
+    <div class="trace-summary">
+      <div>
+        <div class="trace-query">${escapeHtml(trace.query)}</div>
+        <div class="log-meta">${trace.agent_role} · ${trace.agent_id} · ${trace.task_id} · ${fmtDate(trace.created_at)}</div>
+      </div>
+      <div class="trace-counts">
+        <span class="tag">${t("selected")} ${trace.selected_memories.length}</span>
+        <span class="tag">${t("filtered")} ${filtered.length}</span>
+      </div>
+    </div>
+    <div class="trace-reason">${escapeHtml(trace.reason)}</div>
+    <div class="trace-columns">
+      <section>
+        <h3>${t("traceExplain.candidates")}</h3>
+        <div class="candidate-list">
+          ${
+            scored.length
+              ? scored.map((item) => {
+                  const memory = memoryById(item.memory_id);
+                  return `
+                    <article class="candidate-card ${item.selected ? "candidate-selected" : ""}">
+                      <div class="candidate-head">
+                        <span class="tag">${item.selected ? t("traceExplain.selected") : t("traceExplain.candidate")}</span>
+                        <strong>${t("traceExplain.score")} ${Number(item.score || 0).toFixed(4)}</strong>
+                      </div>
+                      <div class="memory-title">${escapeHtml(memory?.summary || item.memory_id)}</div>
+                      <div class="memory-body">${escapeHtml(memory?.content || `${item.scope} · ${item.memory_type}`)}</div>
+                      <div class="score-parts-label">${t("traceExplain.parts")}</div>
+                      <div class="score-parts">${scorePartsHtml(item.score_parts)}</div>
+                    </article>
+                  `;
+                }).join("")
+              : `<div class="empty">${t("traceExplain.noScored")}</div>`
+          }
+        </div>
+      </section>
+      <section>
+        <h3>${t("traceExplain.filtered")}</h3>
+        <div class="filtered-list">
+          ${
+            filtered.length
+              ? filtered.map((memoryId) => {
+                  const memory = memoryById(memoryId);
+                  const reason = trace.filter_reasons?.[memoryId] || trace.reason;
+                  return `
+                    <article class="filtered-card">
+                      <div class="memory-title">${escapeHtml(memory?.summary || memoryId)}</div>
+                      <div class="memory-body">${escapeHtml(reason)}</div>
+                      <div class="tag-row"><span class="tag">${escapeHtml(memoryId)}</span></div>
+                    </article>
+                  `;
+                }).join("")
+              : `<div class="empty">${t("traceExplain.noFiltered")}</div>`
+          }
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function renderEvents() {
   setText("eventCount", `${state.events.length} ${t("entries")}`);
   const el = $("eventList");
@@ -291,16 +412,18 @@ function renderTraces() {
   }
   el.innerHTML = state.traces
     .map((trace) => `
-      <div class="log-row">
+      <div class="log-row trace-row ${trace.trace_id === state.selectedTraceId ? "active-trace" : ""}" data-trace-id="${trace.trace_id}">
         <div class="log-time">${fmtDate(trace.created_at)}<br>${trace.trace_id}</div>
         <div>
           <div class="log-title">${escapeHtml(trace.query)}</div>
           <div class="log-meta">${trace.agent_role} · ${t("selected")} ${trace.selected_memories.length} · ${t("filtered")} ${trace.filtered_memories.length}</div>
           <div class="memory-body">${escapeHtml(trace.reason)}</div>
+          <button class="btn trace-inspect" type="button" data-trace-id="${trace.trace_id}">${t("inspect")}</button>
         </div>
       </div>
     `)
     .join("");
+  renderTraceExplain();
 }
 
 function escapeHtml(value) {
@@ -326,6 +449,9 @@ async function refresh() {
   state.memories = memories;
   state.events = events;
   state.traces = traces;
+  if (!state.selectedTraceId && traces.length) {
+    state.selectedTraceId = traces[0].trace_id;
+  }
 
   setText("serviceStatus", t(`status.${health.status}`));
   setText("lastUpdated", new Date().toLocaleTimeString());
@@ -340,6 +466,7 @@ async function refresh() {
   renderMemories();
   renderEvents();
   renderTraces();
+  renderTraceExplain();
 }
 
 async function runRetrieval(event) {
@@ -356,6 +483,7 @@ async function runRetrieval(event) {
   setText("retrieveResult", t("probe.running"));
   try {
     const result = await api("/retrieve", { method: "POST", body: JSON.stringify(payload) });
+    state.selectedTraceId = result.trace_id;
     setText("retrieveResult", `trace: ${result.trace_id}\n\n${result.packed_context || t("probe.noMatches")}`);
     await refresh();
   } catch (error) {
@@ -372,6 +500,13 @@ $("langBtn").addEventListener("click", () => {
 $("scopeFilter").addEventListener("change", renderMemories);
 $("typeFilter").addEventListener("change", renderMemories);
 $("retrieveForm").addEventListener("submit", runRetrieval);
+$("traceList").addEventListener("click", (event) => {
+  const target = event.target.closest("[data-trace-id]");
+  if (!target) return;
+  state.selectedTraceId = target.dataset.traceId;
+  renderTraces();
+  document.getElementById("traceExplain").scrollIntoView({ behavior: "smooth", block: "start" });
+});
 function setLegendOpen(open) {
   $("legendPopover").hidden = !open;
   $("legendBackdrop").hidden = !open;
