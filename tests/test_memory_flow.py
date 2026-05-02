@@ -212,3 +212,61 @@ def test_memory_status_history_is_auditable():
         assert history[0]["memory_id"] == memory_id
         assert history[0]["from_status"] == "active"
         assert history[0]["to_status"] == "archived"
+
+
+def test_memory_relation_can_supersede_old_memory():
+    with TestClient(app) as client:
+        task_id = f"task_relation_test_{uuid4().hex}"
+        old_response = client.post(
+            "/memories",
+            json={
+                "task_id": task_id,
+                "agent_id": "reviewer_1",
+                "memory_type": "episodic",
+                "scope": "team-shared",
+                "content": "Reviewer initially allowed unbounded retries.",
+            },
+        )
+        new_response = client.post(
+            "/memories",
+            json={
+                "task_id": task_id,
+                "agent_id": "reviewer_1",
+                "memory_type": "episodic",
+                "scope": "team-shared",
+                "content": "Reviewer requires bounded backoff before retry approval.",
+            },
+        )
+        old_memory_id = old_response.json()["memory_id"]
+        new_memory_id = new_response.json()["memory_id"]
+
+        relation_response = client.post(
+            "/memory-relations",
+            json={
+                "source_memory_id": new_memory_id,
+                "target_memory_id": old_memory_id,
+                "relation_type": "supersedes",
+                "reason": "The later review decision replaces the initial retry guidance.",
+            },
+        )
+
+        assert relation_response.status_code == 201
+        relation = relation_response.json()
+        assert relation["relation_type"] == "supersedes"
+        assert relation["status"] == "open"
+
+        old_detail = client.get(f"/memories/{old_memory_id}").json()
+        assert old_detail["status"] == "superseded"
+
+        relation_list = client.get(f"/memories/{old_memory_id}/relations").json()
+        assert relation["relation_id"] in {item["relation_id"] for item in relation_list}
+
+        status_history = client.get(f"/memories/{old_memory_id}/status-decisions").json()
+        assert status_history[0]["to_status"] == "superseded"
+
+        resolve_response = client.post(
+            f"/memory-relations/{relation['relation_id']}/resolve",
+            json={"reason": "Reviewer accepted the newer guidance."},
+        )
+        assert resolve_response.status_code == 200
+        assert resolve_response.json()["status"] == "resolved"

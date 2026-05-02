@@ -430,6 +430,41 @@ textarea { resize: vertical; line-height: 1.5; }
 .decision-summary span {
   font-family: Arial, sans-serif;
 }
+.relation-summary {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.relation-summary strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.relation-list {
+  display: grid;
+  gap: 8px;
+}
+.relation-row {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--soft-line);
+  background: rgba(255, 255, 255, 0.24);
+}
+.relation-row span {
+  color: var(--accent-2);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.relation-row em {
+  color: #403c34;
+  font-family: Arial, sans-serif;
+  font-style: normal;
+}
 .inline-decision {
   margin-top: 12px;
   padding: 12px;

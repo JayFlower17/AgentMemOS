@@ -13,11 +13,13 @@ from agentmemos.enums import MemoryStatus
 from agentmemos.models import (
     AgentEventModel,
     MemoryDecisionTraceModel,
+    MemoryRelationModel,
     MemoryRecordModel,
     MemoryStatusDecisionModel,
     PromotionDecisionModel,
     RetrievalTraceModel,
     new_id,
+    utcnow,
 )
 from agentmemos.retrieval import pack_context, retrieve_memories
 from agentmemos.schemas import (
@@ -27,6 +29,9 @@ from agentmemos.schemas import (
     HealthResponse,
     MemoryCreate,
     MemoryDecisionTrace,
+    MemoryRelation,
+    MemoryRelationCreate,
+    MemoryRelationResolveRequest,
     MemoryRecord,
     MemoryStatusDecision,
     PromotionDecision,
@@ -39,6 +44,7 @@ from agentmemos.schemas import (
 from agentmemos.serializers import (
     event_to_schema,
     memory_decision_to_schema,
+    memory_relation_to_schema,
     memory_to_schema,
     promotion_to_schema,
     status_decision_to_schema,
@@ -199,6 +205,11 @@ def dashboard_stats(db: Session = Depends(get_db)) -> DashboardStats:
         total_memories=db.scalar(select(func.count()).select_from(MemoryRecordModel)) or 0,
         total_traces=db.scalar(select(func.count()).select_from(RetrievalTraceModel)) or 0,
         total_promotions=db.scalar(select(func.count()).select_from(PromotionDecisionModel)) or 0,
+        total_relations=db.scalar(select(func.count()).select_from(MemoryRelationModel)) or 0,
+        open_relations=db.scalar(
+            select(func.count()).select_from(MemoryRelationModel).where(MemoryRelationModel.status == "open")
+        )
+        or 0,
         active_memories=db.scalar(
             select(func.count()).select_from(MemoryRecordModel).where(MemoryRecordModel.status == MemoryStatus.active)
         )
@@ -236,6 +247,82 @@ def promote_memory(memory_id: str, payload: PromoteMemoryRequest, db: Session = 
     db.commit()
     db.refresh(memory)
     return memory_to_schema(memory)
+
+
+@app.post("/memory-relations", response_model=MemoryRelation, status_code=status.HTTP_201_CREATED)
+def create_memory_relation(payload: MemoryRelationCreate, db: Session = Depends(get_db)) -> MemoryRelation:
+    if payload.source_memory_id == payload.target_memory_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A memory cannot relate to itself")
+    source = db.get(MemoryRecordModel, payload.source_memory_id)
+    target = db.get(MemoryRecordModel, payload.target_memory_id)
+    if source is None or target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+
+    relation = MemoryRelationModel(
+        source_memory_id=source.memory_id,
+        target_memory_id=target.memory_id,
+        relation_type=payload.relation_type,
+        reason=payload.reason,
+    )
+    db.add(relation)
+    if payload.relation_type == "supersedes" and target.status != MemoryStatus.superseded:
+        db.add(
+            MemoryStatusDecisionModel(
+                memory_id=target.memory_id,
+                from_status=target.status,
+                to_status=MemoryStatus.superseded,
+                reason=f"Superseded by {source.memory_id}: {payload.reason}",
+            )
+        )
+        target.status = MemoryStatus.superseded
+    db.commit()
+    db.refresh(relation)
+    return memory_relation_to_schema(relation)
+
+
+@app.get("/memory-relations", response_model=list[MemoryRelation])
+def list_memory_relations(
+    status_filter: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+) -> list[MemoryRelation]:
+    stmt = select(MemoryRelationModel).order_by(MemoryRelationModel.created_at.desc()).limit(min(limit, 200))
+    if status_filter:
+        stmt = stmt.where(MemoryRelationModel.status == status_filter)
+    return [memory_relation_to_schema(relation) for relation in db.scalars(stmt)]
+
+
+@app.get("/memories/{memory_id}/relations", response_model=list[MemoryRelation])
+def list_memory_relations_for_memory(memory_id: str, db: Session = Depends(get_db)) -> list[MemoryRelation]:
+    memory = db.get(MemoryRecordModel, memory_id)
+    if memory is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    stmt = (
+        select(MemoryRelationModel)
+        .where(
+            (MemoryRelationModel.source_memory_id == memory_id)
+            | (MemoryRelationModel.target_memory_id == memory_id)
+        )
+        .order_by(MemoryRelationModel.created_at.desc())
+    )
+    return [memory_relation_to_schema(relation) for relation in db.scalars(stmt)]
+
+
+@app.post("/memory-relations/{relation_id}/resolve", response_model=MemoryRelation)
+def resolve_memory_relation(
+    relation_id: str,
+    payload: MemoryRelationResolveRequest,
+    db: Session = Depends(get_db),
+) -> MemoryRelation:
+    relation = db.get(MemoryRelationModel, relation_id)
+    if relation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Relation not found")
+    relation.status = "resolved"
+    relation.reason = f"{relation.reason}\nResolution: {payload.reason}"
+    relation.resolved_at = utcnow()
+    db.commit()
+    db.refresh(relation)
+    return memory_relation_to_schema(relation)
 
 
 @app.post("/memories/{memory_id}/status", response_model=MemoryRecord)

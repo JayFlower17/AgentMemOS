@@ -4,6 +4,7 @@ const state = {
   stats: null,
   memories: [],
   memoryDecisions: [],
+  memoryRelations: [],
   events: [],
   traces: [],
   selectedMemoryId: null,
@@ -50,6 +51,10 @@ const translations = {
     "memoryDecision.reason": "Reason",
     "memoryDecision.signals": "Signals",
     "memoryDecision.selectedHelp": "Write decision: source event, extraction/manual path, chosen memory type, scope, confidence, and importance.",
+    "memoryRelation.title": "Governance",
+    "memoryRelation.empty": "No governance relation is recorded for this memory.",
+    "memoryRelation.source": "This memory is the source of a relation.",
+    "memoryRelation.target": "This memory is the target of a relation.",
     "traceExplain.title": "Trace explain",
     "traceExplain.empty": "Select a retrieval trace to inspect scoring, selected memories, and filtered memory reasons.",
     "traceExplain.selected": "Selected",
@@ -81,6 +86,7 @@ const translations = {
     "legend.memory.episodic": "<strong>episodic</strong>: concrete event, tool result, finding, failure, or observation.",
     "legend.memory.procedural": "<strong>procedural</strong>: reusable practice, rule, workflow, or learned strategy.",
     "legend.memory.decisions": "<strong>Decision details</strong>: click a memory card to expand why it was written, classified, scoped, and scored.",
+    "legend.memory.relations": "<strong>Governance relations</strong>: supersedes means a newer memory replaces an older one, conflicts_with marks unresolved disagreement, and duplicates links records that should be merged or reviewed.",
     "legend.event.title": "Event",
     "legend.event.body1": "Raw agent runtime input, such as a tool result or review finding.",
     "legend.event.body2": "Use it to verify where a memory came from.",
@@ -143,6 +149,10 @@ const translations = {
     "memoryDecision.reason": "原因",
     "memoryDecision.signals": "信号",
     "memoryDecision.selectedHelp": "写入决策：来源事件、抽取/手动路径、选择的记忆类型、作用域、可信度和重要性。",
+    "memoryRelation.title": "治理关系",
+    "memoryRelation.empty": "这条 memory 还没有治理关系记录。",
+    "memoryRelation.source": "这条 memory 是关系的来源。",
+    "memoryRelation.target": "这条 memory 是关系的目标。",
     "traceExplain.title": "检索解释",
     "traceExplain.empty": "选择一条检索追踪，查看评分、选中记忆和过滤原因。",
     "traceExplain.selected": "已选中",
@@ -174,6 +184,7 @@ const translations = {
     "legend.memory.episodic": "<strong>episodic</strong>：具体事件、工具结果、发现、失败或观察。",
     "legend.memory.procedural": "<strong>procedural</strong>：可复用做法、规则、流程或策略。",
     "legend.memory.decisions": "<strong>决策详情</strong>：点击 memory 卡片，展开查看它为什么被写入、分类、设定作用域和评分。",
+    "legend.memory.relations": "<strong>治理关系</strong>：supersedes 表示新 memory 替代旧 memory，conflicts_with 标记未解决冲突，duplicates 用于把应合并或复核的记录关联起来。",
     "legend.event.title": "Event（事件）",
     "legend.event.body1": "agent runtime 写入的原始输入，例如工具结果、review 反馈或任务状态变化。",
     "legend.event.body2": "用它确认某条记忆来自哪里。",
@@ -291,6 +302,12 @@ function decisionsForMemory(memoryId) {
   return state.memoryDecisions.filter((decision) => decision.memory_id === memoryId);
 }
 
+function relationsForMemory(memoryId) {
+  return state.memoryRelations.filter((relation) => {
+    return relation.source_memory_id === memoryId || relation.target_memory_id === memoryId;
+  });
+}
+
 function primaryDecisionForMemory(memoryId) {
   return decisionsForMemory(memoryId)[0] || null;
 }
@@ -345,6 +362,7 @@ function renderMemories() {
           <div class="memory-body">${escapeHtml(memory.content)}</div>
           <div class="tag-row">${memoryTags(memory)}<span class="tag decision-tag decision-tag-${decisionType}">${decisionType}</span></div>
           ${renderDecisionSummary(memory, decision, expanded)}
+          ${renderRelationSummary(memory, expanded)}
         </div>
       </article>
     `;
@@ -385,6 +403,35 @@ function renderDecisionSummary(memory, decision, expanded) {
           <h3>${t("memoryDecision.signals")}</h3>
           <div class="signal-list">${renderSignals(decision.signals)}</div>
         </section>
+      </div>
+    </div>
+  `;
+}
+
+function renderRelationSummary(memory, expanded) {
+  const relations = relationsForMemory(memory.memory_id);
+  if (!relations.length) {
+    return expanded ? `<div class="relation-summary empty-inline">${escapeHtml(t("memoryRelation.empty"))}</div>` : "";
+  }
+  const openCount = relations.filter((relation) => relation.status === "open").length;
+  const headline = `${t("memoryRelation.title")} · ${relations.length} · open ${openCount}`;
+  if (!expanded) {
+    return `<div class="relation-summary"><strong>${escapeHtml(headline)}</strong></div>`;
+  }
+  return `
+    <div class="relation-summary">
+      <strong>${escapeHtml(headline)}</strong>
+      <div class="relation-list">
+        ${relations.map((relation) => {
+          const direction = relation.source_memory_id === memory.memory_id ? t("memoryRelation.source") : t("memoryRelation.target");
+          return `
+            <div class="relation-row">
+              <span>${escapeHtml(relation.relation_type)} · ${escapeHtml(relation.status)}</span>
+              <strong>${escapeHtml(direction)}</strong>
+              <em>${escapeHtml(relation.reason)}</em>
+            </div>
+          `;
+        }).join("")}
       </div>
     </div>
   `;
@@ -562,11 +609,12 @@ function escapeHtml(value) {
 
 async function refresh() {
   setText("serviceStatus", t("status.syncing"));
-  const [health, stats, memories, memoryDecisions, events, traces] = await Promise.all([
+  const [health, stats, memories, memoryDecisions, memoryRelations, events, traces] = await Promise.all([
     api("/health"),
     api("/dashboard/stats"),
     api("/memories?limit=200"),
     api("/memory-decisions?limit=200"),
+    api("/memory-relations?limit=200"),
     api("/events?limit=80"),
     api("/traces?limit=80"),
   ]);
@@ -574,6 +622,7 @@ async function refresh() {
   state.stats = stats;
   state.memories = memories;
   state.memoryDecisions = memoryDecisions;
+  state.memoryRelations = memoryRelations;
   state.events = events;
   state.traces = traces;
   const selectedMemoryStillExists = memories.some((memory) => memory.memory_id === state.selectedMemoryId);

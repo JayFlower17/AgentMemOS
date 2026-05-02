@@ -106,4 +106,17 @@ class MemoryStatusDecisionModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class MemoryRelationModel(Base):
+    __tablename__ = "memory_relations"
+
+    relation_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("rel"))
+    source_memory_id: Mapped[str] = mapped_column(String(64), ForeignKey("memory_records.memory_id"), index=True)
+    target_memory_id: Mapped[str] = mapped_column(String(64), ForeignKey("memory_records.memory_id"), index=True)
+    relation_type: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 Index("ix_memory_task_scope_status", MemoryRecordModel.task_id, MemoryRecordModel.scope, MemoryRecordModel.status)

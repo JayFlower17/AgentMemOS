@@ -1,6 +1,7 @@
 from agentmemos.models import (
     AgentEventModel,
     MemoryDecisionTraceModel,
+    MemoryRelationModel,
     MemoryRecordModel,
     MemoryStatusDecisionModel,
     PromotionDecisionModel,
@@ -9,6 +10,7 @@ from agentmemos.models import (
 from agentmemos.schemas import (
     AgentEvent,
     MemoryDecisionTrace,
+    MemoryRelation,
     MemoryRecord,
     MemoryStatusDecision,
     PromotionDecision,
@@ -35,6 +37,10 @@ def memory_to_schema(model: MemoryRecordModel) -> MemoryRecord:
 
 def memory_decision_to_schema(model: MemoryDecisionTraceModel) -> MemoryDecisionTrace:
     return MemoryDecisionTrace.model_validate(model)
+
+
+def memory_relation_to_schema(model: MemoryRelationModel) -> MemoryRelation:
+    return MemoryRelation.model_validate(model)
 
 
 def trace_to_schema(model: RetrievalTraceModel) -> RetrievalTrace:

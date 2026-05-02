@@ -97,6 +97,30 @@ class MemoryStatusDecision(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MemoryRelationCreate(BaseModel):
+    source_memory_id: str
+    target_memory_id: str
+    relation_type: str = Field(pattern="^(supersedes|conflicts_with|duplicates)$")
+    reason: str = Field(min_length=1)
+
+
+class MemoryRelationResolveRequest(BaseModel):
+    reason: str = Field(default="Relation has been reviewed.")
+
+
+class MemoryRelation(BaseModel):
+    relation_id: str
+    source_memory_id: str
+    target_memory_id: str
+    relation_type: str
+    status: str
+    reason: str
+    created_at: datetime
+    resolved_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PromotionDecision(BaseModel):
     decision_id: str
     memory_id: str
@@ -155,6 +179,8 @@ class DashboardStats(BaseModel):
     total_traces: int
     active_memories: int
     total_promotions: int
+    total_relations: int
+    open_relations: int
     scope_counts: dict[str, int]
     type_counts: dict[str, int]
     status_counts: dict[str, int]

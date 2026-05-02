@@ -108,6 +108,10 @@ The adapter retrieves role-aware memory before the step and emits a completion e
 - `GET /memories/{memory_id}/promotions` returns promotion history for a memory.
 - `POST /memories/{memory_id}/status` archives or restores a memory with a reason.
 - `GET /memories/{memory_id}/status-decisions` returns status change history for a memory.
+- `POST /memory-relations` records governance links such as `supersedes`, `conflicts_with`, and `duplicates`.
+- `GET /memory-relations` returns recent memory governance links.
+- `GET /memories/{memory_id}/relations` returns governance links for one memory.
+- `POST /memory-relations/{relation_id}/resolve` closes a reviewed governance link.
 - `GET /memory-decisions` returns recent memory write decisions.
 - `GET /promotions` returns recent promotion decisions.
 - `GET /traces/{trace_id}` returns an audit trace for a retrieval.
