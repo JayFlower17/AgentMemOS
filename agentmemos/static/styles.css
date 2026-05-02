@@ -418,6 +418,12 @@ textarea { resize: vertical; line-height: 1.5; }
   gap: 8px;
   justify-content: flex-end;
 }
+.trace-help {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .trace-reason {
   margin: 14px 0;
   padding: 12px;
@@ -447,6 +453,13 @@ textarea { resize: vertical; line-height: 1.5; }
   border: 1px solid var(--soft-line);
   padding: 12px;
   background: rgba(251, 248, 241, 0.72);
+}
+.filtered-more {
+  padding: 12px;
+  border: 1px dashed var(--soft-line);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 .candidate-selected {
   border-color: var(--ok);

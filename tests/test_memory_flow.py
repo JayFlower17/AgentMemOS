@@ -82,6 +82,7 @@ def test_dashboard_routes_are_available():
         assert page_response.status_code == 200
         assert "AgentMemOS" in page_response.text
         assert "Trace explain" in page_response.text
+        assert "Trace explain panel" in page_response.text
 
         stats_response = client.get("/dashboard/stats")
         assert stats_response.status_code == 200

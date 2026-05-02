@@ -51,8 +51,10 @@ const translations = {
     "traceExplain.candidates": "Scored candidates",
     "traceExplain.noScored": "No scored candidates recorded for this trace.",
     "traceExplain.noFiltered": "No filtered memories for this trace.",
+    "traceExplain.moreFiltered": "{count} more filtered memories are hidden.",
     "traceExplain.score": "score",
     "traceExplain.parts": "score parts",
+    "traceExplain.defaultHelp": "The dashboard opens the most informative trace first: selected memories, then scored candidates, then the newest trace.",
     "legend.title": "Quick guide",
     "legend.intro": "<strong>AgentMemOS observes three things:</strong> events come in, memories are formed, traces explain retrieval.",
     "legend.memory.title": "Memory",
@@ -75,6 +77,7 @@ const translations = {
     "legend.trace.body1": "Audit record for a retrieval request.",
     "legend.trace.body2": "Use it to see what was selected, filtered, and why.",
     "legend.trace.fields": "<strong>Fields</strong>: query, agent role, selected memories, filtered memories, reason.",
+    "legend.trace.explain": "<strong>Trace explain panel</strong>: click a trace or run Probe. The top shows who retrieved what; the left column shows visible candidates and score parts; the right column shows filtered memories and why they were hidden. The dashboard opens the most informative trace first.",
     records: "records",
     entries: "entries",
     traces: "traces",
@@ -131,8 +134,10 @@ const translations = {
     "traceExplain.candidates": "候选评分",
     "traceExplain.noScored": "这条追踪没有记录候选评分。",
     "traceExplain.noFiltered": "这条追踪没有过滤记忆。",
+    "traceExplain.moreFiltered": "还有 {count} 条被过滤记忆已收起。",
     "traceExplain.score": "分数",
     "traceExplain.parts": "分项",
+    "traceExplain.defaultHelp": "看板会优先打开信息量最高的 trace：先选有命中的，再选有候选评分的，最后才选最新 trace。",
     "legend.title": "快速说明",
     "legend.intro": "<strong>AgentMemOS 主要观测三类对象：</strong>事件进入系统，事件沉淀为记忆，追踪记录解释检索过程。",
     "legend.memory.title": "Memory（记忆）",
@@ -155,6 +160,7 @@ const translations = {
     "legend.trace.body1": "一次 memory retrieval 的审计记录。",
     "legend.trace.body2": "用它查看检索时选中了什么、过滤了什么、为什么这样处理。",
     "legend.trace.fields": "<strong>核心字段</strong>：query、agent role、selected memories、filtered memories、reason。",
+    "legend.trace.explain": "<strong>Trace explain 面板</strong>：点击一条 trace 或运行 Probe。顶部看是谁在什么任务里检索；左侧看可见候选及分项得分；右侧看被过滤的记忆和过滤原因。看板会默认打开信息量最高的 trace。",
     records: "条记录",
     entries: "条事件",
     traces: "条追踪",
@@ -259,6 +265,15 @@ function memoryById(memoryId) {
   return state.memories.find((memory) => memory.memory_id === memoryId);
 }
 
+function pickInformativeTrace(traces) {
+  return (
+    traces.find((trace) => (trace.selected_memories || []).length > 0)
+    || traces.find((trace) => (trace.scored_memories || []).length > 0)
+    || traces[0]
+    || null
+  );
+}
+
 function renderMemories() {
   const list = $("memoryList");
   const scope = $("scopeFilter").value;
@@ -321,6 +336,8 @@ function renderTraceExplain(trace = state.traces.find((item) => item.trace_id ==
   body.className = "trace-explain";
   const scored = trace.scored_memories || [];
   const filtered = trace.filtered_memories || [];
+  const visibleFiltered = filtered.slice(0, 10);
+  const hiddenFilteredCount = Math.max(filtered.length - visibleFiltered.length, 0);
   body.innerHTML = `
     <div class="trace-summary">
       <div>
@@ -332,6 +349,7 @@ function renderTraceExplain(trace = state.traces.find((item) => item.trace_id ==
         <span class="tag">${t("filtered")} ${filtered.length}</span>
       </div>
     </div>
+    <div class="trace-help">${escapeHtml(t("traceExplain.defaultHelp"))}</div>
     <div class="trace-reason">${escapeHtml(trace.reason)}</div>
     <div class="trace-columns">
       <section>
@@ -363,7 +381,7 @@ function renderTraceExplain(trace = state.traces.find((item) => item.trace_id ==
         <div class="filtered-list">
           ${
             filtered.length
-              ? filtered.map((memoryId) => {
+              ? `${visibleFiltered.map((memoryId) => {
                   const memory = memoryById(memoryId);
                   const reason = trace.filter_reasons?.[memoryId] || trace.reason;
                   return `
@@ -373,7 +391,8 @@ function renderTraceExplain(trace = state.traces.find((item) => item.trace_id ==
                       <div class="tag-row"><span class="tag">${escapeHtml(memoryId)}</span></div>
                     </article>
                   `;
-                }).join("")
+                }).join("")}
+                ${hiddenFilteredCount ? `<div class="filtered-more">${escapeHtml(t("traceExplain.moreFiltered").replace("{count}", hiddenFilteredCount))}</div>` : ""}`
               : `<div class="empty">${t("traceExplain.noFiltered")}</div>`
           }
         </div>
@@ -449,8 +468,9 @@ async function refresh() {
   state.memories = memories;
   state.events = events;
   state.traces = traces;
-  if (!state.selectedTraceId && traces.length) {
-    state.selectedTraceId = traces[0].trace_id;
+  const selectedStillExists = traces.some((trace) => trace.trace_id === state.selectedTraceId);
+  if (!selectedStillExists) {
+    state.selectedTraceId = pickInformativeTrace(traces)?.trace_id || null;
   }
 
   setText("serviceStatus", t(`status.${health.status}`));

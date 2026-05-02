@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AgentMemOS · Memory Atlas</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=20260502-trace-explain">
+  <link rel="stylesheet" href="/static/styles.css?v=20260502-trace-explain-2">
 </head>
 <body>
   <header class="topbar">
@@ -67,6 +67,7 @@
             <p data-i18n="legend.trace.body2">Use it to see what was selected, filtered, and why.</p>
             <div class="type-list">
               <p data-i18n-html="legend.trace.fields"><strong>Fields</strong>: query, agent role, selected memories, filtered memories, reason.</p>
+              <p data-i18n-html="legend.trace.explain"><strong>Trace explain panel</strong>: click a trace or run Probe. The top shows who retrieved what; the left column shows visible candidates and score parts; the right column shows filtered memories and why they were hidden. The dashboard opens the most informative trace first.</p>
             </div>
           </section>
         </div>
@@ -197,6 +198,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=20260502-trace-explain"></script>
+  <script src="/static/app.js?v=20260502-trace-explain-2"></script>
 </body>
 </html>
