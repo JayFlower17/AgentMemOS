@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AgentMemOS · Memory Atlas</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=20260502-inline-decisions">
+  <link rel="stylesheet" href="/static/styles.css?v=20260502-memory-kind-guide">
 </head>
 <body>
   <header class="topbar">
@@ -47,6 +47,9 @@
               <p data-i18n-html="legend.memory.taskLocal"><strong>task-local</strong>: shared context inside one task.</p>
               <p data-i18n-html="legend.memory.teamShared"><strong>team-shared</strong>: team-level conclusion or risk useful to multiple agents.</p>
               <p data-i18n-html="legend.memory.projectGlobal"><strong>project-global</strong>: long-lived knowledge reusable across tasks.</p>
+              <p data-i18n-html="legend.memory.sourceKinds"><strong>Write path tells how a memory entered the system.</strong></p>
+              <p data-i18n-html="legend.memory.manual"><strong>manual</strong>: created directly through the memory API, usually with sparse source signals.</p>
+              <p data-i18n-html="legend.memory.extracted"><strong>extracted</strong>: derived by the worker from an agent event, with source event and classification signals.</p>
               <p data-i18n-html="legend.memory.types"><strong>Types define what kind of memory it is.</strong></p>
               <p data-i18n-html="legend.memory.working"><strong>working</strong>: current task state, goal, constraint, or progress.</p>
               <p data-i18n-html="legend.memory.episodic"><strong>episodic</strong>: concrete event, tool result, finding, failure, or observation.</p>
@@ -199,6 +202,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=20260502-inline-decisions"></script>
+  <script src="/static/app.js?v=20260502-memory-kind-guide"></script>
 </body>
 </html>
