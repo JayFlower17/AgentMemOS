@@ -121,6 +121,18 @@ class MemoryRelation(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MemoryInsight(BaseModel):
+    insight_id: str
+    insight_type: str
+    severity: str
+    summary: str
+    memory_ids: list[str] = Field(default_factory=list)
+    trace_ids: list[str] = Field(default_factory=list)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    suggested_action: str
+    created_at: datetime | None = None
+
+
 class PromotionDecision(BaseModel):
     decision_id: str
     memory_id: str

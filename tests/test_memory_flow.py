@@ -290,3 +290,57 @@ def test_memory_relation_can_supersede_old_memory():
         )
         assert resolve_response.status_code == 200
         assert resolve_response.json()["status"] == "resolved"
+
+
+def test_memory_insights_surface_agent_action_items():
+    with TestClient(app) as client:
+        task_id = f"task_insight_test_{uuid4().hex}"
+        first_response = client.post(
+            "/memories",
+            json={
+                "task_id": task_id,
+                "agent_id": "reviewer_1",
+                "memory_type": "episodic",
+                "scope": "team-shared",
+                "content": "Reviewer says retries are safe without additional limits.",
+            },
+        )
+        second_response = client.post(
+            "/memories",
+            json={
+                "task_id": task_id,
+                "agent_id": "reviewer_2",
+                "memory_type": "episodic",
+                "scope": "team-shared",
+                "content": "Reviewer says retries require bounded backoff limits.",
+            },
+        )
+        relation_response = client.post(
+            "/memory-relations",
+            json={
+                "source_memory_id": first_response.json()["memory_id"],
+                "target_memory_id": second_response.json()["memory_id"],
+                "relation_type": "conflicts_with",
+                "reason": "Reviewers disagree about retry safety.",
+            },
+        )
+        assert relation_response.status_code == 201
+
+        retrieve_response = client.post(
+            "/retrieve",
+            json={
+                "task_id": task_id,
+                "agent_id": "coder_1",
+                "agent_role": "coder",
+                "query": "unrelated deployment window",
+                "allowed_scopes": ["agent-local"],
+            },
+        )
+        assert retrieve_response.status_code == 200
+        assert retrieve_response.json()["memories"] == []
+
+        insights_response = client.get(f"/memory-insights?task_id={task_id}")
+        assert insights_response.status_code == 200
+        insight_types = {insight["insight_type"] for insight in insights_response.json()}
+        assert "open_conflicts_with" in insight_types
+        assert "retrieval_miss" in insight_types

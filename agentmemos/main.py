@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from hashlib import sha1
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -29,6 +30,7 @@ from agentmemos.schemas import (
     HealthResponse,
     MemoryCreate,
     MemoryDecisionTrace,
+    MemoryInsight,
     MemoryRelation,
     MemoryRelationCreate,
     MemoryRelationResolveRequest,
@@ -192,6 +194,116 @@ def list_promotions(limit: int = 50, db: Session = Depends(get_db)) -> list[Prom
 def list_traces(limit: int = 50, db: Session = Depends(get_db)) -> list[RetrievalTrace]:
     stmt = select(RetrievalTraceModel).order_by(RetrievalTraceModel.created_at.desc()).limit(min(limit, 200))
     return [trace_to_schema(trace) for trace in db.scalars(stmt)]
+
+
+def _insight_id(*parts: str) -> str:
+    return f"insight_{sha1('|'.join(parts).encode()).hexdigest()[:16]}"
+
+
+def _relation_insight(relation: MemoryRelationModel, source: MemoryRecordModel | None) -> MemoryInsight:
+    task_id = source.task_id if source else None
+    relation_labels = {
+        "conflicts_with": ("high", "Open memory conflict needs resolution."),
+        "duplicates": ("medium", "Possible duplicate memories should be merged or canonicalized."),
+        "supersedes": ("low", "Superseded memory is waiting for governance review."),
+    }
+    severity, summary = relation_labels.get(relation.relation_type, ("low", "Open memory relation needs review."))
+    return MemoryInsight(
+        insight_id=_insight_id("relation", relation.relation_id, relation.status),
+        insight_type=f"open_{relation.relation_type}",
+        severity=severity,
+        summary=summary,
+        memory_ids=[relation.source_memory_id, relation.target_memory_id],
+        evidence={
+            "relation_id": relation.relation_id,
+            "relation_type": relation.relation_type,
+            "task_id": task_id,
+            "reason": relation.reason,
+        },
+        suggested_action="Review the relation and resolve it once the canonical memory state is clear.",
+        created_at=relation.created_at,
+    )
+
+
+def _trace_insights(trace: RetrievalTraceModel) -> list[MemoryInsight]:
+    insights: list[MemoryInsight] = []
+    if not trace.selected_memories:
+        insights.append(
+            MemoryInsight(
+                insight_id=_insight_id("trace-miss", trace.trace_id),
+                insight_type="retrieval_miss",
+                severity="medium",
+                summary="Retrieval returned no memories for this request.",
+                trace_ids=[trace.trace_id],
+                evidence={"task_id": trace.task_id, "agent_role": trace.agent_role, "query": trace.query},
+                suggested_action="Inspect whether the task lacks useful memory, the query is too narrow, or scope filters are too restrictive.",
+                created_at=trace.created_at,
+            )
+        )
+    for item in trace.scored_memories or []:
+        if not item.get("selected"):
+            continue
+        score = float(item.get("score") or 0)
+        if score < 0.45:
+            insights.append(
+                MemoryInsight(
+                    insight_id=_insight_id("low-score", trace.trace_id, item.get("memory_id", "")),
+                    insight_type="low_confidence_selection",
+                    severity="low",
+                    summary="Retrieval selected a low-scoring memory.",
+                    memory_ids=[item.get("memory_id", "")],
+                    trace_ids=[trace.trace_id],
+                    evidence={"score": score, "score_parts": item.get("score_parts", {}), "query": trace.query},
+                    suggested_action="Ask an agent to verify whether the selected memory is useful, stale, or under-scored.",
+                    created_at=trace.created_at,
+                )
+            )
+        if item.get("governance"):
+            insights.append(
+                MemoryInsight(
+                    insight_id=_insight_id("governance-warning", trace.trace_id, item.get("memory_id", "")),
+                    insight_type="governance_warning_selected",
+                    severity="medium",
+                    summary="Retrieval selected a memory with open governance relations.",
+                    memory_ids=[item.get("memory_id", "")],
+                    trace_ids=[trace.trace_id],
+                    evidence={"governance": item.get("governance"), "query": trace.query},
+                    suggested_action="Review the open relation before treating this memory as fully settled.",
+                    created_at=trace.created_at,
+                )
+            )
+    return insights
+
+
+@app.get("/memory-insights", response_model=list[MemoryInsight])
+def list_memory_insights(
+    task_id: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+) -> list[MemoryInsight]:
+    insights: list[MemoryInsight] = []
+    relation_stmt = (
+        select(MemoryRelationModel)
+        .where(MemoryRelationModel.status == "open")
+        .order_by(MemoryRelationModel.created_at.desc())
+        .limit(200)
+    )
+    for relation in db.scalars(relation_stmt):
+        source = db.get(MemoryRecordModel, relation.source_memory_id)
+        target = db.get(MemoryRecordModel, relation.target_memory_id)
+        if task_id and task_id not in {source.task_id if source else None, target.task_id if target else None}:
+            continue
+        insights.append(_relation_insight(relation, source))
+
+    trace_stmt = select(RetrievalTraceModel).order_by(RetrievalTraceModel.created_at.desc()).limit(200)
+    if task_id:
+        trace_stmt = trace_stmt.where(RetrievalTraceModel.task_id == task_id)
+    for trace in db.scalars(trace_stmt):
+        insights.extend(_trace_insights(trace))
+
+    severity_rank = {"high": 0, "medium": 1, "low": 2}
+    insights.sort(key=lambda item: (severity_rank.get(item.severity, 9), item.created_at or utcnow()), reverse=False)
+    return insights[: min(limit, 200)]
 
 
 @app.get("/dashboard/stats", response_model=DashboardStats)
