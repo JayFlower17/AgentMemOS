@@ -49,6 +49,7 @@ const translations = {
     "memoryDecision.title": "Memory decision",
     "memoryDecision.empty": "Select a memory to inspect why it was written, classified, scoped, and scored.",
     "memoryDecision.noDecision": "No write decision is recorded for this memory. It may be historical data created before this audit feature existed.",
+    "memoryDecision.oneAtATime": "This panel shows one selected memory at a time. Click another memory card to switch records.",
     "memoryDecision.reason": "Reason",
     "memoryDecision.signals": "Signals",
     "memoryDecision.selectedHelp": "This panel explains the write-side decision: source event, extraction/manual path, chosen memory type, scope, confidence, and importance.",
@@ -140,6 +141,7 @@ const translations = {
     "memoryDecision.title": "记忆写入决策",
     "memoryDecision.empty": "选择一条记忆，查看它为什么被写入、分类、设定作用域和评分。",
     "memoryDecision.noDecision": "这条记忆没有写入决策记录，可能是审计功能出现前创建的历史数据。",
+    "memoryDecision.oneAtATime": "这个面板一次展示一条被选中的 memory。点击其他 memory 卡片可以切换记录。",
     "memoryDecision.reason": "原因",
     "memoryDecision.signals": "信号",
     "memoryDecision.selectedHelp": "这个面板解释写入侧决策：来源事件、抽取/手动路径、选择的记忆类型、作用域、可信度和重要性。",
@@ -288,9 +290,18 @@ function decisionsForMemory(memoryId) {
   return state.memoryDecisions.filter((decision) => decision.memory_id === memoryId);
 }
 
+function primaryDecisionForMemory(memoryId) {
+  return decisionsForMemory(memoryId)[0] || null;
+}
+
 function pickDecisionMemory(memories) {
-  const decidedIds = new Set(state.memoryDecisions.map((decision) => decision.memory_id));
-  return memories.find((memory) => decidedIds.has(memory.memory_id)) || memories[0] || null;
+  const byId = new Map(memories.map((memory) => [memory.memory_id, memory]));
+  const extracted = state.memoryDecisions.find(
+    (decision) => decision.decision_type === "extracted" && byId.has(decision.memory_id)
+  );
+  if (extracted) return byId.get(extracted.memory_id);
+  const decided = state.memoryDecisions.find((decision) => byId.has(decision.memory_id));
+  return (decided && byId.get(decided.memory_id)) || memories[0] || null;
 }
 
 function pickInformativeTrace(traces) {
@@ -317,8 +328,11 @@ function renderMemories() {
   }
 
   list.innerHTML = memories
-    .map((memory) => `
-      <article class="memory-card ${memory.memory_id === state.selectedMemoryId ? "active-memory" : ""}" data-memory-id="${memory.memory_id}">
+    .map((memory) => {
+      const decision = primaryDecisionForMemory(memory.memory_id);
+      const decisionType = decision?.decision_type || "no-decision";
+      return `
+      <article class="memory-card ${memory.memory_id === state.selectedMemoryId ? "active-memory" : ""} decision-${decisionType}" data-memory-id="${memory.memory_id}">
         <div class="coord">
           ${fmtDate(memory.created_at)}<br>
           ${memory.task_id || "global"}<br>
@@ -327,10 +341,11 @@ function renderMemories() {
         <div>
           <div class="memory-title">${escapeHtml(memory.summary)}</div>
           <div class="memory-body">${escapeHtml(memory.content)}</div>
-          <div class="tag-row">${memoryTags(memory)}</div>
+          <div class="tag-row">${memoryTags(memory)}<span class="tag decision-tag decision-tag-${decisionType}">${decisionType}</span></div>
         </div>
       </article>
-    `)
+    `;
+    })
     .join("");
 }
 
@@ -378,6 +393,7 @@ function renderMemoryDecision(memory = memoryById(state.selectedMemoryId)) {
           <div class="log-meta">${memory.memory_type} · ${memory.scope} · ${memory.agent_id || "system"} · ${memory.task_id || "global"}</div>
         </div>
       </div>
+      <div class="trace-help">${escapeHtml(t("memoryDecision.oneAtATime"))}</div>
       <div class="decision-empty inline">${escapeHtml(t("memoryDecision.noDecision"))}</div>
     `;
     return;
@@ -396,7 +412,7 @@ function renderMemoryDecision(memory = memoryById(state.selectedMemoryId)) {
             <span class="tag scope-${decision.chosen_scope}">${decision.chosen_scope}</span>
           </div>
         </div>
-        <div class="trace-help">${escapeHtml(t("memoryDecision.selectedHelp"))}</div>
+        <div class="trace-help">${escapeHtml(t("memoryDecision.selectedHelp"))} ${escapeHtml(t("memoryDecision.oneAtATime"))}</div>
         <div class="decision-metrics">
           ${renderDecisionMetric("confidence", Number(decision.confidence || 0).toFixed(2))}
           ${renderDecisionMetric("importance", Number(decision.importance || 0).toFixed(2))}

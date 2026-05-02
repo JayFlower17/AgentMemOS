@@ -296,6 +296,20 @@ textarea { resize: vertical; line-height: 1.5; }
 }
 .tag.scope-team-shared, .tag.scope-project-global { color: var(--ok); }
 .tag.scope-agent-local { color: var(--warn); }
+.decision-tag-extracted {
+  color: var(--ok);
+  background: rgba(230, 240, 222, 0.72);
+}
+.decision-tag-manual {
+  color: var(--warn);
+}
+.decision-tag-no-decision {
+  color: var(--muted);
+  border-style: dashed;
+}
+.decision-extracted {
+  box-shadow: inset 4px 0 0 rgba(47, 125, 84, 0.52);
+}
 
 .probe-form { display: grid; gap: 12px; padding: 16px; }
 .probe-form.compact {
