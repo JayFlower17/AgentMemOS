@@ -133,6 +133,17 @@ class MemoryInsight(BaseModel):
     created_at: datetime | None = None
 
 
+class MemoryRelationSuggestion(BaseModel):
+    suggestion_id: str
+    relation_type: str
+    confidence: float
+    source_memory_id: str
+    target_memory_id: str
+    reason: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    suggested_action: str
+
+
 class PromotionDecision(BaseModel):
     decision_id: str
     memory_id: str

@@ -344,3 +344,56 @@ def test_memory_insights_surface_agent_action_items():
         insight_types = {insight["insight_type"] for insight in insights_response.json()}
         assert "open_conflicts_with" in insight_types
         assert "retrieval_miss" in insight_types
+
+
+def test_memory_relation_suggestions_find_duplicates_and_conflicts():
+    with TestClient(app) as client:
+        duplicate_task_id = f"task_suggestion_duplicate_{uuid4().hex}"
+        conflict_task_id = f"task_suggestion_conflict_{uuid4().hex}"
+        duplicate_payload = {
+            "task_id": duplicate_task_id,
+            "agent_id": "reviewer_1",
+            "memory_type": "episodic",
+            "scope": "team-shared",
+            "content": "Retry policy requires bounded backoff limits before approval.",
+        }
+        first_duplicate = client.post("/memories", json=duplicate_payload)
+        second_duplicate = client.post(
+            "/memories",
+            json={
+                **duplicate_payload,
+                "agent_id": "reviewer_2",
+                "content": "Retry policy requires bounded backoff limits before approval and release.",
+            },
+        )
+        assert first_duplicate.status_code == 201
+        assert second_duplicate.status_code == 201
+
+        duplicate_suggestions = client.get(f"/memory-relation-suggestions?task_id={duplicate_task_id}").json()
+        assert any(suggestion["relation_type"] == "duplicates" for suggestion in duplicate_suggestions)
+
+        first_conflict = client.post(
+            "/memories",
+            json={
+                "task_id": conflict_task_id,
+                "agent_id": "reviewer_1",
+                "memory_type": "episodic",
+                "scope": "team-shared",
+                "content": "Reviewer says retries are safe without additional limits.",
+            },
+        )
+        second_conflict = client.post(
+            "/memories",
+            json={
+                "task_id": conflict_task_id,
+                "agent_id": "reviewer_2",
+                "memory_type": "episodic",
+                "scope": "team-shared",
+                "content": "Reviewer says retries require bounded backoff limits.",
+            },
+        )
+        assert first_conflict.status_code == 201
+        assert second_conflict.status_code == 201
+
+        conflict_suggestions = client.get(f"/memory-relation-suggestions?task_id={conflict_task_id}").json()
+        assert any(suggestion["relation_type"] == "conflicts_with" for suggestion in conflict_suggestions)

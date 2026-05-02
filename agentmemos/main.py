@@ -34,6 +34,7 @@ from agentmemos.schemas import (
     MemoryRelation,
     MemoryRelationCreate,
     MemoryRelationResolveRequest,
+    MemoryRelationSuggestion,
     MemoryRecord,
     MemoryStatusDecision,
     PromotionDecision,
@@ -273,6 +274,136 @@ def _trace_insights(trace: RetrievalTraceModel) -> list[MemoryInsight]:
                 )
             )
     return insights
+
+
+def _memory_terms(memory: MemoryRecordModel) -> set[str]:
+    stopwords = {
+        "the",
+        "and",
+        "for",
+        "that",
+        "with",
+        "this",
+        "from",
+        "should",
+        "before",
+        "after",
+        "memory",
+        "reviewer",
+    }
+    words = []
+    for raw in f"{memory.summary} {memory.content}".lower().replace(".", " ").replace(",", " ").split():
+        token = "".join(ch for ch in raw if ch.isalnum() or ch in {"-", "_"})
+        if len(token) > 2 and token not in stopwords:
+            words.append(token)
+    return set(words)
+
+
+def _jaccard(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _has_existing_relation(db: Session, left_id: str, right_id: str, relation_type: str) -> bool:
+    stmt = select(MemoryRelationModel).where(
+        MemoryRelationModel.relation_type == relation_type,
+        (
+            (
+                (MemoryRelationModel.source_memory_id == left_id)
+                & (MemoryRelationModel.target_memory_id == right_id)
+            )
+            | (
+                (MemoryRelationModel.source_memory_id == right_id)
+                & (MemoryRelationModel.target_memory_id == left_id)
+            )
+        ),
+    )
+    return db.scalar(stmt) is not None
+
+
+def _relation_suggestion_id(relation_type: str, source_id: str, target_id: str) -> str:
+    return f"suggest_{sha1('|'.join([relation_type, source_id, target_id]).encode()).hexdigest()[:16]}"
+
+
+def _suggest_relation_for_pair(
+    db: Session,
+    left: MemoryRecordModel,
+    right: MemoryRecordModel,
+) -> MemoryRelationSuggestion | None:
+    left_terms = _memory_terms(left)
+    right_terms = _memory_terms(right)
+    overlap = _jaccard(left_terms, right_terms)
+    combined = left_terms | right_terms
+    if overlap >= 0.72 and not _has_existing_relation(db, left.memory_id, right.memory_id, "duplicates"):
+        source, target = (left, right) if left.importance >= right.importance else (right, left)
+        return MemoryRelationSuggestion(
+            suggestion_id=_relation_suggestion_id("duplicates", source.memory_id, target.memory_id),
+            relation_type="duplicates",
+            confidence=round(min(0.99, overlap), 4),
+            source_memory_id=source.memory_id,
+            target_memory_id=target.memory_id,
+            reason="Active memories have highly overlapping terms and may represent the same reusable knowledge.",
+            evidence={"term_overlap": round(overlap, 4), "shared_terms": sorted(left_terms & right_terms)[:12]},
+            suggested_action="Create a duplicates relation or merge these memories into one canonical record.",
+        )
+
+    conflict_pairs = [
+        ("safe", "unsafe"),
+        ("safe", "require"),
+        ("safe", "requires"),
+        ("allow", "requires"),
+        ("allow", "require"),
+        ("allowed", "requires"),
+        ("allowed", "require"),
+        ("without", "requires"),
+        ("without", "require"),
+        ("pass", "failed"),
+        ("approved", "blocked"),
+    ]
+    has_conflict_marker = any(a in combined and b in combined for a, b in conflict_pairs)
+    if overlap >= 0.25 and has_conflict_marker and not _has_existing_relation(
+        db, left.memory_id, right.memory_id, "conflicts_with"
+    ):
+        source, target = (left, right) if left.created_at >= right.created_at else (right, left)
+        return MemoryRelationSuggestion(
+            suggestion_id=_relation_suggestion_id("conflicts_with", source.memory_id, target.memory_id),
+            relation_type="conflicts_with",
+            confidence=round(min(0.95, 0.45 + overlap), 4),
+            source_memory_id=source.memory_id,
+            target_memory_id=target.memory_id,
+            reason="Active memories discuss overlapping terms but contain opposing policy or outcome markers.",
+            evidence={"term_overlap": round(overlap, 4), "shared_terms": sorted(left_terms & right_terms)[:12]},
+            suggested_action="Create a conflicts_with relation and ask a reviewer or agent to resolve the canonical guidance.",
+        )
+    return None
+
+
+@app.get("/memory-relation-suggestions", response_model=list[MemoryRelationSuggestion])
+def list_memory_relation_suggestions(
+    task_id: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+) -> list[MemoryRelationSuggestion]:
+    stmt = (
+        select(MemoryRecordModel)
+        .where(MemoryRecordModel.status == MemoryStatus.active)
+        .order_by(MemoryRecordModel.created_at.desc())
+        .limit(200)
+    )
+    if task_id:
+        stmt = stmt.where(MemoryRecordModel.task_id == task_id)
+    memories = list(db.scalars(stmt))
+    suggestions: list[MemoryRelationSuggestion] = []
+    for index, left in enumerate(memories):
+        for right in memories[index + 1 :]:
+            if left.task_id != right.task_id or left.memory_type != right.memory_type or left.scope != right.scope:
+                continue
+            suggestion = _suggest_relation_for_pair(db, left, right)
+            if suggestion:
+                suggestions.append(suggestion)
+    suggestions.sort(key=lambda item: item.confidence, reverse=True)
+    return suggestions[: min(limit, 200)]
 
 
 @app.get("/memory-insights", response_model=list[MemoryInsight])
