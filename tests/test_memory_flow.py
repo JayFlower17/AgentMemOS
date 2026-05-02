@@ -264,6 +264,26 @@ def test_memory_relation_can_supersede_old_memory():
         status_history = client.get(f"/memories/{old_memory_id}/status-decisions").json()
         assert status_history[0]["to_status"] == "superseded"
 
+        retrieve_response = client.post(
+            "/retrieve",
+            json={
+                "task_id": task_id,
+                "agent_id": "coder_1",
+                "agent_role": "coder",
+                "query": "retry approval bounded",
+                "allowed_scopes": ["team-shared"],
+            },
+        )
+        body = retrieve_response.json()
+        returned_ids = {memory["memory_id"] for memory in body["memories"]}
+        assert new_memory_id in returned_ids
+        assert old_memory_id not in returned_ids
+        trace = client.get(f"/traces/{body['trace_id']}").json()
+        assert old_memory_id in trace["filtered_memories"]
+        assert "superseded" in trace["filter_reasons"][old_memory_id]
+        new_scored = next(item for item in trace["scored_memories"] if item["memory_id"] == new_memory_id)
+        assert new_scored["governance"][0]["relation_type"] == "supersedes"
+
         resolve_response = client.post(
             f"/memory-relations/{relation['relation_id']}/resolve",
             json={"reason": "Reviewer accepted the newer guidance."},

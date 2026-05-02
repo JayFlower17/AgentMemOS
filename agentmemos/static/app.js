@@ -66,6 +66,7 @@ const translations = {
     "traceExplain.moreFiltered": "{count} more filtered memories are hidden.",
     "traceExplain.score": "score",
     "traceExplain.parts": "score parts",
+    "traceExplain.governance": "governance",
     "traceExplain.defaultHelp": "The dashboard opens the most informative trace first: selected memories, then scored candidates, then the newest trace.",
     "legend.title": "Quick guide",
     "legend.intro": "<strong>AgentMemOS observes three things:</strong> events come in, memories are formed, traces explain retrieval.",
@@ -168,6 +169,7 @@ const translations = {
     "traceExplain.moreFiltered": "还有 {count} 条被过滤记忆已收起。",
     "traceExplain.score": "分数",
     "traceExplain.parts": "分项",
+    "traceExplain.governance": "治理提示",
     "traceExplain.defaultHelp": "看板会优先打开信息量最高的 trace：先选有命中的，再选有候选评分的，最后才选最新 trace。",
     "legend.title": "快速说明",
     "legend.intro": "<strong>AgentMemOS 主要观测三类对象：</strong>事件进入系统，事件沉淀为记忆，追踪记录解释检索过程。",
@@ -482,6 +484,22 @@ function scorePartsHtml(scoreParts) {
     .join("");
 }
 
+function governanceHtml(governance) {
+  const entries = governance || [];
+  if (!entries.length) return "";
+  return `
+    <div class="score-parts-label">${t("traceExplain.governance")}</div>
+    <div class="governance-list">
+      ${entries.map((item) => `
+        <div class="governance-row">
+          <strong>${escapeHtml(item.relation_type)}</strong>
+          <span>${escapeHtml(item.message)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderTraceExplain(trace = state.traces.find((item) => item.trace_id === state.selectedTraceId)) {
   const body = $("traceExplainBody");
   if (!body) return;
@@ -530,6 +548,7 @@ function renderTraceExplain(trace = state.traces.find((item) => item.trace_id ==
                       <div class="memory-body">${escapeHtml(memory?.content || `${item.scope} · ${item.memory_type}`)}</div>
                       <div class="score-parts-label">${t("traceExplain.parts")}</div>
                       <div class="score-parts">${scorePartsHtml(item.score_parts)}</div>
+                      ${governanceHtml(item.governance)}
                     </article>
                   `;
                 }).join("")

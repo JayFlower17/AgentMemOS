@@ -2,7 +2,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from agentmemos.enums import AgentRole, MemoryScope, MemoryStatus, MemoryType
-from agentmemos.models import MemoryRecordModel, RetrievalTraceModel
+from agentmemos.models import MemoryRecordModel, MemoryRelationModel, RetrievalTraceModel
 from agentmemos.schemas import RetrieveRequest
 
 
@@ -50,23 +50,99 @@ def _is_visible(req: RetrieveRequest, memory: MemoryRecordModel) -> tuple[bool, 
     return True, None
 
 
+def _relations_for_candidates(db: Session, memory_ids: list[str]) -> dict[str, list[MemoryRelationModel]]:
+    if not memory_ids:
+        return {}
+    stmt = (
+        select(MemoryRelationModel)
+        .where(MemoryRelationModel.status == "open")
+        .where(
+            or_(
+                MemoryRelationModel.source_memory_id.in_(memory_ids),
+                MemoryRelationModel.target_memory_id.in_(memory_ids),
+            )
+        )
+    )
+    relations_by_memory: dict[str, list[MemoryRelationModel]] = {memory_id: [] for memory_id in memory_ids}
+    for relation in db.scalars(stmt):
+        relations_by_memory.setdefault(relation.source_memory_id, []).append(relation)
+        relations_by_memory.setdefault(relation.target_memory_id, []).append(relation)
+    return relations_by_memory
+
+
+def _governance_filter_reason(memory: MemoryRecordModel, relations: list[MemoryRelationModel]) -> str | None:
+    status = MemoryStatus(memory.status)
+    if status == MemoryStatus.archived:
+        return "Filtered archived memory."
+    if status == MemoryStatus.superseded:
+        superseding = next(
+            (
+                relation.source_memory_id
+                for relation in relations
+                if relation.relation_type == "supersedes" and relation.target_memory_id == memory.memory_id
+            ),
+            None,
+        )
+        if superseding:
+            return f"Filtered superseded memory; replaced by {superseding}."
+        return "Filtered superseded memory."
+    return None
+
+
+def _governance_warnings(memory: MemoryRecordModel, relations: list[MemoryRelationModel]) -> list[dict[str, str]]:
+    warnings = []
+    for relation in relations:
+        other_memory_id = (
+            relation.target_memory_id if relation.source_memory_id == memory.memory_id else relation.source_memory_id
+        )
+        if relation.relation_type == "conflicts_with":
+            message = f"Open conflict with {other_memory_id}."
+        elif relation.relation_type == "duplicates":
+            message = f"Possible duplicate of {other_memory_id}."
+        elif relation.relation_type == "supersedes" and relation.source_memory_id == memory.memory_id:
+            message = f"Supersedes {other_memory_id}."
+        else:
+            continue
+        warnings.append(
+            {
+                "relation_id": relation.relation_id,
+                "relation_type": relation.relation_type,
+                "other_memory_id": other_memory_id,
+                "message": message,
+            }
+        )
+    return warnings
+
+
 def retrieve_memories(db: Session, req: RetrieveRequest) -> tuple[list[MemoryRecordModel], RetrievalTraceModel]:
     allowed = [scope.value for scope in req.allowed_scopes]
     stmt = (
         select(MemoryRecordModel)
-        .where(MemoryRecordModel.status == MemoryStatus.active)
+        .where(MemoryRecordModel.status.in_([MemoryStatus.active, MemoryStatus.superseded, MemoryStatus.archived]))
         .where(MemoryRecordModel.scope.in_(allowed))
         .where(or_(MemoryRecordModel.task_id == req.task_id, MemoryRecordModel.scope == MemoryScope.project_global))
     )
     candidates = list(db.scalars(stmt))
+    relations_by_memory = _relations_for_candidates(db, [memory.memory_id for memory in candidates])
 
     filtered: list[str] = []
     scored: list[tuple[float, MemoryRecordModel]] = []
     filter_reasons: dict[str, str] = {}
     scored_memories: list[dict] = []
     reasons: list[str] = []
+    governance_seen = False
 
     for memory in candidates:
+        relations = relations_by_memory.get(memory.memory_id, [])
+        governance_reason = _governance_filter_reason(memory, relations)
+        if governance_reason:
+            filtered.append(memory.memory_id)
+            filter_reasons[memory.memory_id] = governance_reason
+            if governance_reason not in reasons:
+                reasons.append(governance_reason)
+            governance_seen = True
+            continue
+
         visible, reason = _is_visible(req, memory)
         if not visible:
             filtered.append(memory.memory_id)
@@ -76,6 +152,9 @@ def retrieve_memories(db: Session, req: RetrieveRequest) -> tuple[list[MemoryRec
                 reasons.append(reason)
             continue
         score, parts = _score_memory(req, memory)
+        warnings = _governance_warnings(memory, relations)
+        if warnings:
+            governance_seen = True
         scored.append((score, memory))
         scored_memories.append(
             {
@@ -85,6 +164,7 @@ def retrieve_memories(db: Session, req: RetrieveRequest) -> tuple[list[MemoryRec
                 "scope": memory.scope,
                 "memory_type": memory.memory_type,
                 "score_parts": {key: round(value, 4) for key, value in parts.items()},
+                "governance": warnings,
             }
         )
 
@@ -94,6 +174,8 @@ def retrieve_memories(db: Session, req: RetrieveRequest) -> tuple[list[MemoryRec
     for item in scored_memories:
         item["selected"] = item["memory_id"] in selected_ids
     reason = "Selected memories by scope visibility, role/type affinity, confidence, importance, and keyword overlap."
+    if governance_seen:
+        reason = f"{reason} Applied memory governance: excluded archived/superseded memories and surfaced open relations."
     if reasons:
         reason = f"{reason} {' '.join(reasons)}"
 

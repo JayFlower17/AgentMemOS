@@ -10,7 +10,8 @@ This MVP implements the first closed loop from the project plan:
 4. Retrieval returns role-aware scoped context through `POST /retrieve`.
 5. Every memory write records why it was classified, scoped, and scored.
 6. Duplicate writes reuse the matching active memory and add a `deduplicated` decision trace.
-7. Every retrieval writes an auditable trace with selected memories, filtered memories, scores, and reasons, available at `GET /traces/{trace_id}`.
+7. Memory governance relations mark superseded, conflicting, and duplicate memories.
+8. Every retrieval applies memory governance and writes an auditable trace with selected memories, filtered memories, scores, open relation warnings, and reasons, available at `GET /traces/{trace_id}`.
 
 The default setup is intentionally light: no Postgres or Redis is required for local development. The app is structured so those can be added behind the storage and queue boundaries later.
 
