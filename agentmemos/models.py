@@ -119,4 +119,19 @@ class MemoryRelationModel(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class MemoryGovernanceActionModel(Base):
+    __tablename__ = "memory_governance_actions"
+
+    action_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("gov"))
+    action_type: Mapped[str] = mapped_column(String(64), index=True)
+    actor: Mapped[str] = mapped_column(String(128), default="system", index=True)
+    relation_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("memory_relations.relation_id"), nullable=True, index=True
+    )
+    suggestion_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 Index("ix_memory_task_scope_status", MemoryRecordModel.task_id, MemoryRecordModel.scope, MemoryRecordModel.status)

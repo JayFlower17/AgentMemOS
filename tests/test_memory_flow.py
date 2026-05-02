@@ -397,3 +397,45 @@ def test_memory_relation_suggestions_find_duplicates_and_conflicts():
 
         conflict_suggestions = client.get(f"/memory-relation-suggestions?task_id={conflict_task_id}").json()
         assert any(suggestion["relation_type"] == "conflicts_with" for suggestion in conflict_suggestions)
+
+
+def test_memory_relation_suggestion_can_be_accepted_with_audit_action():
+    with TestClient(app) as client:
+        task_id = f"task_suggestion_accept_{uuid4().hex}"
+        payload = {
+            "task_id": task_id,
+            "agent_id": "reviewer_1",
+            "memory_type": "episodic",
+            "scope": "team-shared",
+            "content": "Retry policy requires bounded backoff limits before approval.",
+        }
+        client.post("/memories", json=payload)
+        client.post(
+            "/memories",
+            json={
+                **payload,
+                "agent_id": "reviewer_2",
+                "content": "Retry policy requires bounded backoff limits before approval and release.",
+            },
+        )
+
+        suggestions = client.get(f"/memory-relation-suggestions?task_id={task_id}").json()
+        suggestion = next(item for item in suggestions if item["relation_type"] == "duplicates")
+        accept_response = client.post(
+            f"/memory-relation-suggestions/{suggestion['suggestion_id']}/accept",
+            json={"actor": "governance_agent", "reason": "Accept duplicate suggestion for canonical cleanup."},
+        )
+        assert accept_response.status_code == 200
+        accepted = accept_response.json()
+        assert accepted["relation"]["relation_type"] == "duplicates"
+        assert accepted["action"]["actor"] == "governance_agent"
+        assert accepted["action"]["suggestion_id"] == suggestion["suggestion_id"]
+
+        relation_ids = {item["relation_id"] for item in client.get("/memory-relations").json()}
+        assert accepted["relation"]["relation_id"] in relation_ids
+
+        actions = client.get("/memory-governance-actions").json()
+        assert accepted["action"]["action_id"] in {item["action_id"] for item in actions}
+
+        remaining = client.get(f"/memory-relation-suggestions?task_id={task_id}").json()
+        assert suggestion["suggestion_id"] not in {item["suggestion_id"] for item in remaining}

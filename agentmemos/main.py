@@ -14,6 +14,7 @@ from agentmemos.enums import MemoryStatus
 from agentmemos.models import (
     AgentEventModel,
     MemoryDecisionTraceModel,
+    MemoryGovernanceActionModel,
     MemoryRelationModel,
     MemoryRecordModel,
     MemoryStatusDecisionModel,
@@ -24,12 +25,15 @@ from agentmemos.models import (
 )
 from agentmemos.retrieval import pack_context, retrieve_memories
 from agentmemos.schemas import (
+    AcceptMemoryRelationSuggestionRequest,
+    AcceptMemoryRelationSuggestionResponse,
     AgentEvent,
     AgentEventCreate,
     DashboardStats,
     HealthResponse,
     MemoryCreate,
     MemoryDecisionTrace,
+    MemoryGovernanceAction,
     MemoryInsight,
     MemoryRelation,
     MemoryRelationCreate,
@@ -47,6 +51,7 @@ from agentmemos.schemas import (
 from agentmemos.serializers import (
     event_to_schema,
     memory_decision_to_schema,
+    memory_governance_action_to_schema,
     memory_relation_to_schema,
     memory_to_schema,
     promotion_to_schema,
@@ -406,6 +411,109 @@ def list_memory_relation_suggestions(
     return suggestions[: min(limit, 200)]
 
 
+def _all_relation_suggestions(db: Session) -> list[MemoryRelationSuggestion]:
+    memories = list(
+        db.scalars(
+            select(MemoryRecordModel)
+            .where(MemoryRecordModel.status == MemoryStatus.active)
+            .order_by(MemoryRecordModel.created_at.desc())
+            .limit(200)
+        )
+    )
+    suggestions: list[MemoryRelationSuggestion] = []
+    for index, left in enumerate(memories):
+        for right in memories[index + 1 :]:
+            if left.task_id != right.task_id or left.memory_type != right.memory_type or left.scope != right.scope:
+                continue
+            suggestion = _suggest_relation_for_pair(db, left, right)
+            if suggestion:
+                suggestions.append(suggestion)
+    return suggestions
+
+
+def _create_relation_from_values(
+    db: Session,
+    *,
+    source_memory_id: str,
+    target_memory_id: str,
+    relation_type: str,
+    reason: str,
+) -> MemoryRelationModel:
+    source = db.get(MemoryRecordModel, source_memory_id)
+    target = db.get(MemoryRecordModel, target_memory_id)
+    if source is None or target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    relation = MemoryRelationModel(
+        source_memory_id=source.memory_id,
+        target_memory_id=target.memory_id,
+        relation_type=relation_type,
+        reason=reason,
+    )
+    db.add(relation)
+    if relation_type == "supersedes" and target.status != MemoryStatus.superseded:
+        db.add(
+            MemoryStatusDecisionModel(
+                memory_id=target.memory_id,
+                from_status=target.status,
+                to_status=MemoryStatus.superseded,
+                reason=f"Superseded by {source.memory_id}: {reason}",
+            )
+        )
+        target.status = MemoryStatus.superseded
+    return relation
+
+
+@app.post(
+    "/memory-relation-suggestions/{suggestion_id}/accept",
+    response_model=AcceptMemoryRelationSuggestionResponse,
+)
+def accept_memory_relation_suggestion(
+    suggestion_id: str,
+    payload: AcceptMemoryRelationSuggestionRequest,
+    db: Session = Depends(get_db),
+) -> AcceptMemoryRelationSuggestionResponse:
+    suggestion = next(
+        (item for item in _all_relation_suggestions(db) if item.suggestion_id == suggestion_id),
+        None,
+    )
+    if suggestion is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Suggestion not found or no longer valid")
+    relation = _create_relation_from_values(
+        db,
+        source_memory_id=suggestion.source_memory_id,
+        target_memory_id=suggestion.target_memory_id,
+        relation_type=suggestion.relation_type,
+        reason=payload.reason or suggestion.reason,
+    )
+    db.flush()
+    action = MemoryGovernanceActionModel(
+        action_type="accept_relation_suggestion",
+        actor=payload.actor,
+        relation_id=relation.relation_id,
+        suggestion_id=suggestion.suggestion_id,
+        reason=payload.reason or suggestion.suggested_action,
+        evidence=suggestion.model_dump(),
+    )
+    db.add(action)
+    db.commit()
+    db.refresh(relation)
+    db.refresh(action)
+    return AcceptMemoryRelationSuggestionResponse(
+        relation=memory_relation_to_schema(relation),
+        action=memory_governance_action_to_schema(action),
+    )
+
+
+@app.get("/memory-governance-actions", response_model=list[MemoryGovernanceAction])
+def list_memory_governance_actions(limit: int = 50, db: Session = Depends(get_db)) -> list[MemoryGovernanceAction]:
+    stmt = (
+        select(MemoryGovernanceActionModel)
+        .order_by(MemoryGovernanceActionModel.created_at.desc())
+        .limit(min(limit, 200))
+    )
+    return [memory_governance_action_to_schema(action) for action in db.scalars(stmt)]
+
+
 @app.get("/memory-insights", response_model=list[MemoryInsight])
 def list_memory_insights(
     task_id: str | None = None,
@@ -496,28 +604,13 @@ def promote_memory(memory_id: str, payload: PromoteMemoryRequest, db: Session = 
 def create_memory_relation(payload: MemoryRelationCreate, db: Session = Depends(get_db)) -> MemoryRelation:
     if payload.source_memory_id == payload.target_memory_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A memory cannot relate to itself")
-    source = db.get(MemoryRecordModel, payload.source_memory_id)
-    target = db.get(MemoryRecordModel, payload.target_memory_id)
-    if source is None or target is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
-
-    relation = MemoryRelationModel(
-        source_memory_id=source.memory_id,
-        target_memory_id=target.memory_id,
+    relation = _create_relation_from_values(
+        db,
+        source_memory_id=payload.source_memory_id,
+        target_memory_id=payload.target_memory_id,
         relation_type=payload.relation_type,
         reason=payload.reason,
     )
-    db.add(relation)
-    if payload.relation_type == "supersedes" and target.status != MemoryStatus.superseded:
-        db.add(
-            MemoryStatusDecisionModel(
-                memory_id=target.memory_id,
-                from_status=target.status,
-                to_status=MemoryStatus.superseded,
-                reason=f"Superseded by {source.memory_id}: {payload.reason}",
-            )
-        )
-        target.status = MemoryStatus.superseded
     db.commit()
     db.refresh(relation)
     return memory_relation_to_schema(relation)

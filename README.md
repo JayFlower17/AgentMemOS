@@ -114,6 +114,8 @@ The adapter retrieves role-aware memory before the step and emits a completion e
 - `GET /memories/{memory_id}/relations` returns governance links for one memory.
 - `POST /memory-relations/{relation_id}/resolve` closes a reviewed governance link.
 - `GET /memory-relation-suggestions` proposes duplicate or conflict relations between active memories.
+- `POST /memory-relation-suggestions/{suggestion_id}/accept` creates a relation from a still-valid suggestion.
+- `GET /memory-governance-actions` returns audited governance actions.
 - `GET /memory-insights` returns agent-readable governance action items from open relations and retrieval traces.
 - `GET /memory-decisions` returns recent memory write decisions.
 - `GET /promotions` returns recent promotion decisions.

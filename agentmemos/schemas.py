@@ -144,6 +144,29 @@ class MemoryRelationSuggestion(BaseModel):
     suggested_action: str
 
 
+class AcceptMemoryRelationSuggestionRequest(BaseModel):
+    actor: str = Field(default="system", min_length=1)
+    reason: str | None = None
+
+
+class MemoryGovernanceAction(BaseModel):
+    action_id: str
+    action_type: str
+    actor: str
+    relation_id: str | None
+    suggestion_id: str | None
+    reason: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AcceptMemoryRelationSuggestionResponse(BaseModel):
+    relation: MemoryRelation
+    action: MemoryGovernanceAction
+
+
 class PromotionDecision(BaseModel):
     decision_id: str
     memory_id: str

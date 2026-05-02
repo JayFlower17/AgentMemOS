@@ -153,6 +153,17 @@ Verification:
 - `pytest -q`: 15 passed.
 - Confirmed `/memory-relation-suggestions?limit=3` returned duplicate candidates.
 
+### Accept memory governance suggestions
+
+- Added an acceptance path for still-valid memory relation suggestions.
+- Accepting a suggestion creates the corresponding memory relation.
+- Acceptance writes an auditable governance action.
+- Added `GET /memory-governance-actions` for action history.
+
+Verification:
+
+- `pytest -q`: 16 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -167,6 +178,7 @@ Verification:
 - Governance-aware retrieval.
 - Agent-readable memory insights.
 - Automatic relation suggestions.
+- Audited acceptance path for governance suggestions.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
 
 ## Known Gaps
@@ -175,19 +187,19 @@ Verification:
 - Relation suggestions use lexical heuristics, not embeddings or LLM judgment.
 - No persistent job queue yet.
 - SQLite remains the default local store; Postgres/pgvector integration is still pending.
-- No automatic application of suggestions yet.
+- Suggestions are not applied automatically; they require explicit acceptance.
 - No dedicated agent workflow for resolving insights.
 - SDK and adapters are still minimal.
 
 ## Next Recommended Step
 
-Build an agent-action layer for governance suggestions:
+Build a dedicated agent workflow for governance insights:
 
-1. Add an endpoint to accept a suggestion and create the corresponding relation.
-2. Record the decision as an auditable governance action.
-3. Keep the default behavior conservative: suggestions remain read-only until accepted.
-4. Add tests for accepting duplicate/conflict suggestions.
+1. Let an agent fetch `/memory-insights`.
+2. Let the agent inspect or accept related `/memory-relation-suggestions`.
+3. Let the agent resolve low-risk duplicate relations after acceptance.
+4. Keep high-risk conflict resolution explicit and auditable.
 
 This would close the loop:
 
-`memory records -> suggestions -> accepted relation -> retrieval governance -> insights`
+`insights -> suggestion review -> accepted relation -> retrieval governance -> resolved action`
