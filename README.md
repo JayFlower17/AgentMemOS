@@ -9,7 +9,8 @@ This MVP implements the first closed loop from the project plan:
 3. Memories are persisted in SQLite by default.
 4. Retrieval returns role-aware scoped context through `POST /retrieve`.
 5. Every memory write records why it was classified, scoped, and scored.
-6. Every retrieval writes an auditable trace with selected memories, filtered memories, scores, and reasons, available at `GET /traces/{trace_id}`.
+6. Duplicate writes reuse the matching active memory and add a `deduplicated` decision trace.
+7. Every retrieval writes an auditable trace with selected memories, filtered memories, scores, and reasons, available at `GET /traces/{trace_id}`.
 
 The default setup is intentionally light: no Postgres or Redis is required for local development. The app is structured so those can be added behind the storage and queue boundaries later.
 

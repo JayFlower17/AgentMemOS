@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from agentmemos.main import app
@@ -5,11 +7,12 @@ from agentmemos.main import app
 
 def test_event_to_retrieval_trace_flow():
     with TestClient(app) as client:
+        task_id = f"task_test_flow_{uuid4().hex}"
         event_response = client.post(
             "/events",
             json={
                 "event_type": "review.finding.created",
-                "task_id": "task_test_flow",
+                "task_id": task_id,
                 "agent_id": "reviewer_1",
                 "agent_role": "reviewer",
                 "content": "The reviewer found that retries need bounded backoff before approval.",
@@ -21,7 +24,7 @@ def test_event_to_retrieval_trace_flow():
         retrieve_response = client.post(
             "/retrieve",
             json={
-                "task_id": "task_test_flow",
+                "task_id": task_id,
                 "agent_id": "coder_1",
                 "agent_role": "coder",
                 "query": "bounded backoff approval risk",
@@ -43,7 +46,7 @@ def test_event_to_retrieval_trace_flow():
         assert "score_parts" in trace["scored_memories"][0]
 
         source_event_id = event_response.json()["event_id"]
-        task_memories = client.get("/memories?task_id=task_test_flow&limit=200").json()
+        task_memories = client.get(f"/memories?task_id={task_id}&limit=200").json()
         extracted_memory = next(memory for memory in task_memories if memory["source_event_id"] == source_event_id)
         memory_id = extracted_memory["memory_id"]
         decisions_response = client.get(f"/memories/{memory_id}/decisions")
@@ -88,6 +91,37 @@ def test_agent_local_memory_is_hidden_from_other_agents():
         assert trace["filter_reasons"][memory_id] == "Filtered another agent's local memory."
 
 
+def test_duplicate_memory_writes_are_deduplicated_and_audited():
+    with TestClient(app) as client:
+        task_id = f"task_dedup_test_{uuid4().hex}"
+        payload = {
+            "task_id": task_id,
+            "agent_id": "coder_1",
+            "memory_type": "episodic",
+            "scope": "task-local",
+            "content": "Retry policy should keep bounded backoff before approval.",
+        }
+        first_response = client.post("/memories", json=payload)
+        second_response = client.post(
+            "/memories",
+            json={**payload, "content": "  retry policy should keep bounded   backoff before approval.  "},
+        )
+
+        assert first_response.status_code == 201
+        assert second_response.status_code == 201
+        assert second_response.json()["memory_id"] == first_response.json()["memory_id"]
+
+        memory_id = first_response.json()["memory_id"]
+        decisions_response = client.get(f"/memories/{memory_id}/decisions")
+        assert decisions_response.status_code == 200
+        decisions = decisions_response.json()
+        decision_types = {decision["decision_type"] for decision in decisions}
+        assert {"manual", "deduplicated"}.issubset(decision_types)
+        deduplicated = next(decision for decision in decisions if decision["decision_type"] == "deduplicated")
+        assert "Duplicate memory content" in deduplicated["reason"]
+        assert deduplicated["signals"]["dedup_strategy"] == "exact-normalized-content"
+
+
 def test_dashboard_routes_are_available():
     with TestClient(app) as client:
         page_response = client.get("/")
@@ -98,6 +132,7 @@ def test_dashboard_routes_are_available():
         assert "Decision details" in page_response.text
         assert "manual" in page_response.text
         assert "extracted" in page_response.text
+        assert "deduplicated" in page_response.text
 
         stats_response = client.get("/dashboard/stats")
         assert stats_response.status_code == 200
