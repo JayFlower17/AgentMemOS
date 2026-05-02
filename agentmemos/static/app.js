@@ -1,0 +1,396 @@
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  stats: null,
+  memories: [],
+  events: [],
+  traces: [],
+  lang: localStorage.getItem("agentmemos.lang") || "en",
+};
+
+const translations = {
+  en: {
+    "actions.refresh": "Refresh",
+    "nav.memories": "Memories",
+    "nav.events": "Events",
+    "nav.traces": "Traces",
+    "nav.docs": "API Docs",
+    "main.title": "Memory board",
+    "overview.title": "Overview",
+    "overview.events": "Events",
+    "overview.memories": "Memories",
+    "overview.active": "Active memories",
+    "overview.traces": "Traces",
+    "probe.title": "Probe",
+    "probe.taskId": "Task ID",
+    "probe.agentId": "Agent ID",
+    "probe.role": "Role",
+    "probe.query": "Query",
+    "probe.run": "Run retrieval",
+    "probe.empty": "No retrieval run yet.",
+    "probe.running": "Running retrieval...",
+    "probe.noMatches": "No matching memories.",
+    "distribution.eyebrow": "CHART I · SCOPE GOVERNANCE",
+    "distribution.title": "Memory distribution",
+    "filters.allScopes": "All scopes",
+    "filters.allTypes": "All types",
+    "charts.scopes": "Scopes",
+    "charts.types": "Memory types",
+    "charts.status": "Memory status",
+    "charts.roles": "Agent roles",
+    "sections.memories": "Memories",
+    "sections.events": "Events",
+    "sections.traces": "Traces",
+    "legend.title": "Quick guide",
+    "legend.intro": "<strong>AgentMemOS observes three things:</strong> events come in, memories are formed, traces explain retrieval.",
+    "legend.memory.title": "Memory",
+    "legend.memory.body1": "Structured, reusable task knowledge extracted from agent activity.",
+    "legend.memory.body2": "Use it to inspect what the system currently remembers.",
+    "legend.memory.scopes": "<strong>Scopes define who can see a memory.</strong>",
+    "legend.memory.agentLocal": "<strong>agent-local</strong>: private scratch for one specific agent.",
+    "legend.memory.taskLocal": "<strong>task-local</strong>: shared context inside one task.",
+    "legend.memory.teamShared": "<strong>team-shared</strong>: team-level conclusion or risk useful to multiple agents.",
+    "legend.memory.projectGlobal": "<strong>project-global</strong>: long-lived knowledge reusable across tasks.",
+    "legend.memory.types": "<strong>Types define what kind of memory it is.</strong>",
+    "legend.memory.working": "<strong>working</strong>: current task state, goal, constraint, or progress.",
+    "legend.memory.episodic": "<strong>episodic</strong>: concrete event, tool result, finding, failure, or observation.",
+    "legend.memory.procedural": "<strong>procedural</strong>: reusable practice, rule, workflow, or learned strategy.",
+    "legend.event.title": "Event",
+    "legend.event.body1": "Raw agent runtime input, such as a tool result or review finding.",
+    "legend.event.body2": "Use it to verify where a memory came from.",
+    "legend.event.common": "<strong>Common types</strong>: task.created, tool.result.observed, review.finding.created, subtask.completed.",
+    "legend.trace.title": "Trace",
+    "legend.trace.body1": "Audit record for a retrieval request.",
+    "legend.trace.body2": "Use it to see what was selected, filtered, and why.",
+    "legend.trace.fields": "<strong>Fields</strong>: query, agent role, selected memories, filtered memories, reason.",
+    records: "records",
+    entries: "entries",
+    traces: "traces",
+    selected: "selected",
+    filtered: "filtered",
+    "empty.readings": "No readings yet.",
+    "empty.memories": "No memories match this chart.",
+    "empty.events": "No agent events yet.",
+    "empty.traces": "No retrieval traces yet.",
+    "status.checking": "checking",
+    "status.syncing": "syncing",
+    "status.offline": "offline",
+    "status.ok": "ok",
+  },
+  zh: {
+    "actions.refresh": "刷新",
+    "nav.memories": "记忆",
+    "nav.events": "事件",
+    "nav.traces": "追踪",
+    "nav.docs": "接口文档",
+    "main.title": "Memory 看板",
+    "overview.title": "概览",
+    "overview.events": "事件",
+    "overview.memories": "记忆",
+    "overview.active": "有效记忆",
+    "overview.traces": "检索追踪",
+    "probe.title": "检索测试",
+    "probe.taskId": "任务 ID",
+    "probe.agentId": "Agent ID",
+    "probe.role": "角色",
+    "probe.query": "查询",
+    "probe.run": "运行检索",
+    "probe.empty": "还没有运行检索。",
+    "probe.running": "正在检索...",
+    "probe.noMatches": "没有匹配的记忆。",
+    "distribution.eyebrow": "图表 I · 作用域治理",
+    "distribution.title": "记忆分布",
+    "filters.allScopes": "全部作用域",
+    "filters.allTypes": "全部类型",
+    "charts.scopes": "作用域",
+    "charts.types": "记忆类型",
+    "charts.status": "记忆状态",
+    "charts.roles": "Agent 角色",
+    "sections.memories": "记忆",
+    "sections.events": "事件",
+    "sections.traces": "检索追踪",
+    "legend.title": "快速说明",
+    "legend.intro": "<strong>AgentMemOS 主要观测三类对象：</strong>事件进入系统，事件沉淀为记忆，追踪记录解释检索过程。",
+    "legend.memory.title": "Memory（记忆）",
+    "legend.memory.body1": "从 agent 活动中抽取出来的结构化、可复用任务知识。",
+    "legend.memory.body2": "用它查看系统当前记住了什么。",
+    "legend.memory.scopes": "<strong>Scopes 定义谁能看到这条记忆。</strong>",
+    "legend.memory.agentLocal": "<strong>agent-local</strong>：某个具体 agent 的私有草稿或局部经验。",
+    "legend.memory.taskLocal": "<strong>task-local</strong>：只在当前任务内共享的上下文。",
+    "legend.memory.teamShared": "<strong>team-shared</strong>：多个 agent 都应该参考的团队结论、风险或共识。",
+    "legend.memory.projectGlobal": "<strong>project-global</strong>：跨任务长期复用的项目级知识。",
+    "legend.memory.types": "<strong>Types 定义这条记忆是什么性质。</strong>",
+    "legend.memory.working": "<strong>working</strong>：当前任务状态、目标、约束或进度。",
+    "legend.memory.episodic": "<strong>episodic</strong>：具体事件、工具结果、发现、失败或观察。",
+    "legend.memory.procedural": "<strong>procedural</strong>：可复用做法、规则、流程或策略。",
+    "legend.event.title": "Event（事件）",
+    "legend.event.body1": "agent runtime 写入的原始输入，例如工具结果、review 反馈或任务状态变化。",
+    "legend.event.body2": "用它确认某条记忆来自哪里。",
+    "legend.event.common": "<strong>常见类型</strong>：task.created、tool.result.observed、review.finding.created、subtask.completed。",
+    "legend.trace.title": "Trace（追踪）",
+    "legend.trace.body1": "一次 memory retrieval 的审计记录。",
+    "legend.trace.body2": "用它查看检索时选中了什么、过滤了什么、为什么这样处理。",
+    "legend.trace.fields": "<strong>核心字段</strong>：query、agent role、selected memories、filtered memories、reason。",
+    records: "条记录",
+    entries: "条事件",
+    traces: "条追踪",
+    selected: "选中",
+    filtered: "过滤",
+    "empty.readings": "暂无读数。",
+    "empty.memories": "没有匹配当前筛选的记忆。",
+    "empty.events": "暂无 agent 事件。",
+    "empty.traces": "暂无检索追踪。",
+    "status.checking": "检查中",
+    "status.syncing": "同步中",
+    "status.offline": "离线",
+    "status.ok": "正常",
+  },
+};
+
+function t(key) {
+  return translations[state.lang][key] ?? translations.en[key] ?? key;
+}
+
+function applyLanguage() {
+  document.documentElement.lang = state.lang === "zh" ? "zh-CN" : "en";
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-html]").forEach((el) => {
+    el.innerHTML = t(el.dataset.i18nHtml);
+  });
+  const target = state.lang === "zh" ? "en" : "zh";
+  $("langBtn").dataset.langTarget = target;
+  $("langBtn").textContent = state.lang === "zh" ? "EN" : "中文";
+  if ($("retrieveResult").dataset.state === "empty") {
+    setText("retrieveResult", t("probe.empty"));
+  }
+  if (state.stats) {
+    renderBars("scopeBars", state.stats.scope_counts);
+    renderBars("typeBars", state.stats.type_counts);
+    renderBars("statusBars", state.stats.status_counts);
+    renderBars("roleBars", state.stats.role_counts);
+    renderMemories();
+    renderEvents();
+    renderTraces();
+  }
+}
+
+function fmtDate(value) {
+  if (!value) return "n/a";
+  const date = new Date(value);
+  return date.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function setText(id, value) {
+  const el = $(id);
+  if (el) el.textContent = value;
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`${response.status} ${text}`);
+  }
+  return response.json();
+}
+
+function renderBars(id, counts) {
+  const el = $(id);
+  const entries = Object.entries(counts || {});
+  if (!entries.length) {
+    el.innerHTML = `<div class="empty">${t("empty.readings")}</div>`;
+    return;
+  }
+  const max = Math.max(...entries.map(([, count]) => count), 1);
+  el.innerHTML = entries
+    .map(([name, count]) => `
+      <div class="bar-row">
+        <span>${name}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${(count / max) * 100}%"></div></div>
+        <strong>${count}</strong>
+      </div>
+    `)
+    .join("");
+}
+
+function memoryTags(memory) {
+  const scopeClass = `scope-${memory.scope}`;
+  return [
+    `<span class="tag ${scopeClass}">${memory.scope}</span>`,
+    `<span class="tag">${memory.memory_type}</span>`,
+    `<span class="tag">${memory.status}</span>`,
+    `<span class="tag">conf ${Math.round(memory.confidence * 100)}%</span>`,
+    `<span class="tag">imp ${Math.round(memory.importance * 100)}%</span>`,
+  ].join("");
+}
+
+function renderMemories() {
+  const list = $("memoryList");
+  const scope = $("scopeFilter").value;
+  const type = $("typeFilter").value;
+  const memories = state.memories.filter((memory) => {
+    return (!scope || memory.scope === scope) && (!type || memory.memory_type === type);
+  });
+  setText("memoryCount", `${memories.length} ${t("records")}`);
+
+  if (!memories.length) {
+    list.innerHTML = `<div class="empty">${t("empty.memories")}</div>`;
+    return;
+  }
+
+  list.innerHTML = memories
+    .map((memory) => `
+      <article class="memory-card">
+        <div class="coord">
+          ${fmtDate(memory.created_at)}<br>
+          ${memory.task_id || "global"}<br>
+          ${memory.agent_id || "system"}
+        </div>
+        <div>
+          <div class="memory-title">${escapeHtml(memory.summary)}</div>
+          <div class="memory-body">${escapeHtml(memory.content)}</div>
+          <div class="tag-row">${memoryTags(memory)}</div>
+        </div>
+      </article>
+    `)
+    .join("");
+}
+
+function renderEvents() {
+  setText("eventCount", `${state.events.length} ${t("entries")}`);
+  const el = $("eventList");
+  if (!state.events.length) {
+    el.innerHTML = `<div class="empty">${t("empty.events")}</div>`;
+    return;
+  }
+  el.innerHTML = state.events
+    .map((event) => `
+      <div class="log-row">
+        <div class="log-time">${fmtDate(event.created_at)}</div>
+        <div>
+          <div class="log-title">${event.event_type}</div>
+          <div class="log-meta">${event.agent_role} · ${event.agent_id} · ${event.task_id}</div>
+          <div class="memory-body">${escapeHtml(event.content)}</div>
+        </div>
+      </div>
+    `)
+    .join("");
+}
+
+function renderTraces() {
+  setText("traceCount", `${state.traces.length} ${t("traces")}`);
+  const el = $("traceList");
+  if (!state.traces.length) {
+    el.innerHTML = `<div class="empty">${t("empty.traces")}</div>`;
+    return;
+  }
+  el.innerHTML = state.traces
+    .map((trace) => `
+      <div class="log-row">
+        <div class="log-time">${fmtDate(trace.created_at)}<br>${trace.trace_id}</div>
+        <div>
+          <div class="log-title">${escapeHtml(trace.query)}</div>
+          <div class="log-meta">${trace.agent_role} · ${t("selected")} ${trace.selected_memories.length} · ${t("filtered")} ${trace.filtered_memories.length}</div>
+          <div class="memory-body">${escapeHtml(trace.reason)}</div>
+        </div>
+      </div>
+    `)
+    .join("");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function refresh() {
+  setText("serviceStatus", t("status.syncing"));
+  const [health, stats, memories, events, traces] = await Promise.all([
+    api("/health"),
+    api("/dashboard/stats"),
+    api("/memories?limit=200"),
+    api("/events?limit=80"),
+    api("/traces?limit=80"),
+  ]);
+
+  state.stats = stats;
+  state.memories = memories;
+  state.events = events;
+  state.traces = traces;
+
+  setText("serviceStatus", t(`status.${health.status}`));
+  setText("lastUpdated", new Date().toLocaleTimeString());
+  setText("totalEvents", stats.total_events);
+  setText("totalMemories", stats.total_memories);
+  setText("activeMemories", stats.active_memories);
+  setText("totalTraces", stats.total_traces);
+  renderBars("scopeBars", stats.scope_counts);
+  renderBars("typeBars", stats.type_counts);
+  renderBars("statusBars", stats.status_counts);
+  renderBars("roleBars", stats.role_counts);
+  renderMemories();
+  renderEvents();
+  renderTraces();
+}
+
+async function runRetrieval(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const payload = {
+    task_id: form.get("task_id"),
+    agent_id: form.get("agent_id"),
+    agent_role: form.get("agent_role"),
+    query: form.get("query"),
+    allowed_scopes: ["agent-local", "task-local", "team-shared", "project-global"],
+  };
+  $("retrieveResult").dataset.state = "result";
+  setText("retrieveResult", t("probe.running"));
+  try {
+    const result = await api("/retrieve", { method: "POST", body: JSON.stringify(payload) });
+    setText("retrieveResult", `trace: ${result.trace_id}\n\n${result.packed_context || t("probe.noMatches")}`);
+    await refresh();
+  } catch (error) {
+    setText("retrieveResult", error.message);
+  }
+}
+
+$("refreshBtn").addEventListener("click", refresh);
+$("langBtn").addEventListener("click", () => {
+  state.lang = $("langBtn").dataset.langTarget;
+  localStorage.setItem("agentmemos.lang", state.lang);
+  applyLanguage();
+});
+$("scopeFilter").addEventListener("change", renderMemories);
+$("typeFilter").addEventListener("change", renderMemories);
+$("retrieveForm").addEventListener("submit", runRetrieval);
+function setLegendOpen(open) {
+  $("legendPopover").hidden = !open;
+  $("legendBackdrop").hidden = !open;
+  $("legendBtn").setAttribute("aria-expanded", String(open));
+}
+$("legendBtn").addEventListener("click", () => {
+  setLegendOpen($("legendPopover").hidden);
+});
+$("legendBackdrop").addEventListener("click", () => setLegendOpen(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    setLegendOpen(false);
+  }
+});
+
+refresh().catch((error) => {
+  setText("serviceStatus", t("status.offline"));
+  setText("retrieveResult", error.message);
+});
+
+$("retrieveResult").dataset.state = "empty";
+applyLanguage();

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentMemOS · Memory Atlas</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=20260501-i18n">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img class="logo-mark" src="/static/favicon.svg" alt="" aria-hidden="true">
+      <div>
+        <div class="brand-line">
+          <a href="/" class="wordmark">AgentMemOS</a>
+          <span class="status-badge" id="serviceStatus">checking</span>
+        </div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="#memories" data-i18n="nav.memories">Memories</a>
+      <a href="#events" data-i18n="nav.events">Events</a>
+      <a href="#traces" data-i18n="nav.traces">Traces</a>
+      <a href="/docs" data-i18n="nav.docs">API Docs</a>
+    </nav>
+    <div class="top-actions">
+      <span class="sync-time" id="lastUpdated">not synced</span>
+      <button class="btn lang-btn" id="langBtn" type="button" data-lang-target="zh">中文</button>
+      <button class="icon-btn help-btn" id="legendBtn" type="button" aria-expanded="false" aria-label="Open legend" title="Legend">?</button>
+      <button class="btn" id="refreshBtn" type="button" data-i18n="actions.refresh">Refresh</button>
+    </div>
+    <div class="legend-backdrop" id="legendBackdrop" hidden></div>
+    <div class="legend-popover" id="legendPopover" hidden>
+      <div class="legend-note floating">
+        <div class="legend-title" data-i18n="legend.title">Quick guide</div>
+        <div class="legend-rule" data-i18n-html="legend.intro"><strong>AgentMemOS observes three things:</strong> events come in, memories are formed, traces explain retrieval.</div>
+        <div class="guide-sections">
+          <section>
+            <span class="legend-label" data-i18n="legend.memory.title">Memory</span>
+            <p data-i18n="legend.memory.body1">Structured, reusable task knowledge extracted from agent activity.</p>
+            <p data-i18n="legend.memory.body2">Use it to inspect what the system currently remembers.</p>
+            <div class="type-list">
+              <p data-i18n-html="legend.memory.scopes"><strong>Scopes define who can see a memory.</strong></p>
+              <p data-i18n-html="legend.memory.agentLocal"><strong>agent-local</strong>: private scratch for one specific agent.</p>
+              <p data-i18n-html="legend.memory.taskLocal"><strong>task-local</strong>: shared context inside one task.</p>
+              <p data-i18n-html="legend.memory.teamShared"><strong>team-shared</strong>: team-level conclusion or risk useful to multiple agents.</p>
+              <p data-i18n-html="legend.memory.projectGlobal"><strong>project-global</strong>: long-lived knowledge reusable across tasks.</p>
+              <p data-i18n-html="legend.memory.types"><strong>Types define what kind of memory it is.</strong></p>
+              <p data-i18n-html="legend.memory.working"><strong>working</strong>: current task state, goal, constraint, or progress.</p>
+              <p data-i18n-html="legend.memory.episodic"><strong>episodic</strong>: concrete event, tool result, finding, failure, or observation.</p>
+              <p data-i18n-html="legend.memory.procedural"><strong>procedural</strong>: reusable practice, rule, workflow, or learned strategy.</p>
+            </div>
+          </section>
+          <section>
+            <span class="legend-label" data-i18n="legend.event.title">Event</span>
+            <p data-i18n="legend.event.body1">Raw agent runtime input, such as a tool result or review finding.</p>
+            <p data-i18n="legend.event.body2">Use it to verify where a memory came from.</p>
+            <div class="type-list">
+              <p data-i18n-html="legend.event.common"><strong>Common types</strong>: task.created, tool.result.observed, review.finding.created, subtask.completed.</p>
+            </div>
+          </section>
+          <section>
+            <span class="legend-label" data-i18n="legend.trace.title">Trace</span>
+            <p data-i18n="legend.trace.body1">Audit record for a retrieval request.</p>
+            <p data-i18n="legend.trace.body2">Use it to see what was selected, filtered, and why.</p>
+            <div class="type-list">
+              <p data-i18n-html="legend.trace.fields"><strong>Fields</strong>: query, agent role, selected memories, filtered memories, reason.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="console-grid">
+      <div class="console-title">
+        <h1 data-i18n="main.title">Memory board</h1>
+      </div>
+
+      <div class="hero-panel">
+        <span class="corner tl"></span><span class="corner tr"></span>
+        <span class="corner bl"></span><span class="corner br"></span>
+        <div class="panel-head">
+          <span data-i18n="overview.title">Overview</span>
+        </div>
+        <div class="metric-grid">
+          <div class="metric"><span data-i18n="overview.events">Events</span><strong id="totalEvents">0</strong></div>
+          <div class="metric"><span data-i18n="overview.memories">Memories</span><strong id="totalMemories">0</strong></div>
+          <div class="metric"><span data-i18n="overview.active">Active memories</span><strong id="activeMemories">0</strong></div>
+          <div class="metric"><span data-i18n="overview.traces">Traces</span><strong id="totalTraces">0</strong></div>
+        </div>
+      </div>
+
+      <div class="panel probe-panel">
+        <div class="panel-head">
+          <span data-i18n="probe.title">Probe</span>
+        </div>
+        <form id="retrieveForm" class="probe-form compact">
+          <label><span data-i18n="probe.taskId">Task ID</span><input name="task_id" value="task_demo"></label>
+          <label><span data-i18n="probe.agentId">Agent ID</span><input name="agent_id" value="reviewer_1"></label>
+          <label><span data-i18n="probe.role">Role</span>
+            <select name="agent_role">
+              <option value="reviewer">reviewer</option>
+              <option value="coder">coder</option>
+              <option value="planner">planner</option>
+            </select>
+          </label>
+          <label class="wide"><span data-i18n="probe.query">Query</span><textarea name="query" rows="3">What risks should I check before approving this change?</textarea></label>
+          <button class="btn primary wide" type="submit" data-i18n="probe.run">Run retrieval</button>
+        </form>
+        <pre id="retrieveResult" class="context-output compact-output" data-i18n="probe.empty">No retrieval run yet.</pre>
+      </div>
+    </section>
+
+    <section class="band compact-band">
+      <div class="section-head compact-head">
+        <div>
+          <span class="eyebrow" data-i18n="distribution.eyebrow">CHART I · SCOPE GOVERNANCE</span>
+          <h2 data-i18n="distribution.title">Memory distribution</h2>
+        </div>
+        <div class="filters">
+          <select id="scopeFilter" aria-label="Filter by scope">
+            <option value="" data-i18n="filters.allScopes">All scopes</option>
+            <option value="agent-local">agent-local</option>
+            <option value="task-local">task-local</option>
+            <option value="team-shared">team-shared</option>
+            <option value="project-global">project-global</option>
+          </select>
+          <select id="typeFilter" aria-label="Filter by type">
+            <option value="" data-i18n="filters.allTypes">All types</option>
+            <option value="working">working</option>
+            <option value="episodic">episodic</option>
+            <option value="procedural">procedural</option>
+          </select>
+        </div>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-title" data-i18n="charts.scopes">Scopes</div>
+          <div id="scopeBars" class="bars"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title" data-i18n="charts.types">Memory types</div>
+          <div id="typeBars" class="bars"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title" data-i18n="charts.status">Memory status</div>
+          <div id="statusBars" class="bars"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title" data-i18n="charts.roles">Agent roles</div>
+          <div id="roleBars" class="bars"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace" id="memories">
+      <div class="main-column wide-column">
+        <div class="panel">
+          <div class="panel-head">
+            <span data-i18n="sections.memories">Memories</span>
+            <span id="memoryCount">0 records</span>
+          </div>
+          <div class="memory-list" id="memoryList"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="logs">
+      <div class="panel" id="events">
+        <div class="panel-head">
+          <span data-i18n="sections.events">Events</span>
+          <span id="eventCount">0 entries</span>
+        </div>
+        <div id="eventList" class="log-list"></div>
+      </div>
+      <div class="panel" id="traces">
+        <div class="panel-head">
+          <span data-i18n="sections.traces">Traces</span>
+          <span id="traceCount">0 traces</span>
+        </div>
+        <div id="traceList" class="log-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js?v=20260501-i18n"></script>
+</body>
+</html>
