@@ -406,32 +406,41 @@ textarea { resize: vertical; line-height: 1.5; }
   gap: 18px;
   padding-top: 32px;
 }
-.decision-band {
-  padding: 0 0 32px;
-  border-bottom: 1px solid var(--line);
+.decision-summary {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--soft-line);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
-.decision-empty {
-  padding: 28px 16px;
+.decision-summary strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.decision-summary span {
+  font-family: Arial, sans-serif;
+}
+.inline-decision {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--soft-line);
+  background: rgba(251, 248, 241, 0.72);
+}
+.empty-inline {
   color: var(--muted);
   line-height: 1.5;
-}
-.decision-empty.inline {
-  margin-top: 14px;
-  border: 1px dashed var(--soft-line);
-}
-.memory-decision {
-  padding: 16px;
-}
-.decision-card {
-  border: 1px solid var(--soft-line);
-  padding: 14px;
-  background: rgba(251, 248, 241, 0.72);
 }
 .decision-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin: 14px 0;
+}
+.compact-decision-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .decision-metric {
   min-height: 66px;

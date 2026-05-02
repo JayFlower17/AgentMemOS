@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AgentMemOS · Memory Atlas</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=20260502-memory-decisions-2">
+  <link rel="stylesheet" href="/static/styles.css?v=20260502-inline-decisions">
 </head>
 <body>
   <header class="topbar">
@@ -20,7 +20,6 @@
     </div>
     <nav class="nav">
       <a href="#memories" data-i18n="nav.memories">Memories</a>
-      <a href="#memoryDecision" data-i18n="nav.decisions">Decisions</a>
       <a href="#events" data-i18n="nav.events">Events</a>
       <a href="#traces" data-i18n="nav.traces">Traces</a>
       <a href="#traceExplain" data-i18n="nav.explain">Explain</a>
@@ -52,7 +51,7 @@
               <p data-i18n-html="legend.memory.working"><strong>working</strong>: current task state, goal, constraint, or progress.</p>
               <p data-i18n-html="legend.memory.episodic"><strong>episodic</strong>: concrete event, tool result, finding, failure, or observation.</p>
               <p data-i18n-html="legend.memory.procedural"><strong>procedural</strong>: reusable practice, rule, workflow, or learned strategy.</p>
-              <p data-i18n-html="legend.memory.decisions"><strong>Memory decision panel</strong>: click a memory to inspect why it was written, classified, scoped, and scored.</p>
+              <p data-i18n-html="legend.memory.decisions"><strong>Decision details</strong>: click a memory card to expand why it was written, classified, scoped, and scored.</p>
             </div>
           </section>
           <section>
@@ -172,16 +171,6 @@
       </div>
     </section>
 
-    <section class="decision-band" id="memoryDecision">
-      <div class="panel">
-        <div class="panel-head">
-          <span data-i18n="memoryDecision.title">Memory decision</span>
-          <span id="memoryDecisionId">no memory selected</span>
-        </div>
-        <div id="memoryDecisionBody" class="decision-empty" data-i18n="memoryDecision.empty">Select a memory to inspect why it was written, classified, scoped, and scored.</div>
-      </div>
-    </section>
-
     <section class="trace-explain-band" id="traceExplain">
       <div class="panel">
         <div class="panel-head">
@@ -210,6 +199,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=20260502-memory-decisions-2"></script>
+  <script src="/static/app.js?v=20260502-inline-decisions"></script>
 </body>
 </html>

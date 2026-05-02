@@ -15,7 +15,6 @@ const translations = {
   en: {
     "actions.refresh": "Refresh",
     "nav.memories": "Memories",
-    "nav.decisions": "Decisions",
     "nav.events": "Events",
     "nav.traces": "Traces",
     "nav.explain": "Explain",
@@ -46,13 +45,11 @@ const translations = {
     "sections.memories": "Memories",
     "sections.events": "Events",
     "sections.traces": "Traces",
-    "memoryDecision.title": "Memory decision",
-    "memoryDecision.empty": "Select a memory to inspect why it was written, classified, scoped, and scored.",
     "memoryDecision.noDecision": "No write decision is recorded for this memory. It may be historical data created before this audit feature existed.",
-    "memoryDecision.oneAtATime": "This panel shows one selected memory at a time. Click another memory card to switch records.",
+    "memoryDecision.oneAtATime": "Click to expand or collapse write decision details.",
     "memoryDecision.reason": "Reason",
     "memoryDecision.signals": "Signals",
-    "memoryDecision.selectedHelp": "This panel explains the write-side decision: source event, extraction/manual path, chosen memory type, scope, confidence, and importance.",
+    "memoryDecision.selectedHelp": "Write decision: source event, extraction/manual path, chosen memory type, scope, confidence, and importance.",
     "traceExplain.title": "Trace explain",
     "traceExplain.empty": "Select a retrieval trace to inspect scoring, selected memories, and filtered memory reasons.",
     "traceExplain.selected": "Selected",
@@ -79,7 +76,7 @@ const translations = {
     "legend.memory.working": "<strong>working</strong>: current task state, goal, constraint, or progress.",
     "legend.memory.episodic": "<strong>episodic</strong>: concrete event, tool result, finding, failure, or observation.",
     "legend.memory.procedural": "<strong>procedural</strong>: reusable practice, rule, workflow, or learned strategy.",
-    "legend.memory.decisions": "<strong>Memory decision panel</strong>: click a memory to inspect why it was written, classified, scoped, and scored.",
+    "legend.memory.decisions": "<strong>Decision details</strong>: click a memory card to expand why it was written, classified, scoped, and scored.",
     "legend.event.title": "Event",
     "legend.event.body1": "Raw agent runtime input, such as a tool result or review finding.",
     "legend.event.body2": "Use it to verify where a memory came from.",
@@ -107,7 +104,6 @@ const translations = {
   zh: {
     "actions.refresh": "刷新",
     "nav.memories": "记忆",
-    "nav.decisions": "决策",
     "nav.events": "事件",
     "nav.traces": "追踪",
     "nav.explain": "解释",
@@ -138,13 +134,11 @@ const translations = {
     "sections.memories": "记忆",
     "sections.events": "事件",
     "sections.traces": "检索追踪",
-    "memoryDecision.title": "记忆写入决策",
-    "memoryDecision.empty": "选择一条记忆，查看它为什么被写入、分类、设定作用域和评分。",
     "memoryDecision.noDecision": "这条记忆没有写入决策记录，可能是审计功能出现前创建的历史数据。",
-    "memoryDecision.oneAtATime": "这个面板一次展示一条被选中的 memory。点击其他 memory 卡片可以切换记录。",
+    "memoryDecision.oneAtATime": "点击卡片展开或收起写入决策详情。",
     "memoryDecision.reason": "原因",
     "memoryDecision.signals": "信号",
-    "memoryDecision.selectedHelp": "这个面板解释写入侧决策：来源事件、抽取/手动路径、选择的记忆类型、作用域、可信度和重要性。",
+    "memoryDecision.selectedHelp": "写入决策：来源事件、抽取/手动路径、选择的记忆类型、作用域、可信度和重要性。",
     "traceExplain.title": "检索解释",
     "traceExplain.empty": "选择一条检索追踪，查看评分、选中记忆和过滤原因。",
     "traceExplain.selected": "已选中",
@@ -171,7 +165,7 @@ const translations = {
     "legend.memory.working": "<strong>working</strong>：当前任务状态、目标、约束或进度。",
     "legend.memory.episodic": "<strong>episodic</strong>：具体事件、工具结果、发现、失败或观察。",
     "legend.memory.procedural": "<strong>procedural</strong>：可复用做法、规则、流程或策略。",
-    "legend.memory.decisions": "<strong>Memory decision 面板</strong>：点击一条记忆，查看它为什么被写入、分类、设定作用域和评分。",
+    "legend.memory.decisions": "<strong>决策详情</strong>：点击 memory 卡片，展开查看它为什么被写入、分类、设定作用域和评分。",
     "legend.event.title": "Event（事件）",
     "legend.event.body1": "agent runtime 写入的原始输入，例如工具结果、review 反馈或任务状态变化。",
     "legend.event.body2": "用它确认某条记忆来自哪里。",
@@ -222,7 +216,6 @@ function applyLanguage() {
     renderBars("statusBars", state.stats.status_counts);
     renderBars("roleBars", state.stats.role_counts);
     renderMemories();
-    renderMemoryDecision();
     renderEvents();
     renderTraces();
     renderTraceExplain();
@@ -331,8 +324,9 @@ function renderMemories() {
     .map((memory) => {
       const decision = primaryDecisionForMemory(memory.memory_id);
       const decisionType = decision?.decision_type || "no-decision";
+      const expanded = memory.memory_id === state.selectedMemoryId;
       return `
-      <article class="memory-card ${memory.memory_id === state.selectedMemoryId ? "active-memory" : ""} decision-${decisionType}" data-memory-id="${memory.memory_id}">
+      <article class="memory-card ${expanded ? "active-memory" : ""} decision-${decisionType}" data-memory-id="${memory.memory_id}">
         <div class="coord">
           ${fmtDate(memory.created_at)}<br>
           ${memory.task_id || "global"}<br>
@@ -342,11 +336,50 @@ function renderMemories() {
           <div class="memory-title">${escapeHtml(memory.summary)}</div>
           <div class="memory-body">${escapeHtml(memory.content)}</div>
           <div class="tag-row">${memoryTags(memory)}<span class="tag decision-tag decision-tag-${decisionType}">${decisionType}</span></div>
+          ${renderDecisionSummary(memory, decision, expanded)}
         </div>
       </article>
     `;
     })
     .join("");
+}
+
+function renderDecisionSummary(memory, decision, expanded) {
+  if (!decision) {
+    return expanded
+      ? `<div class="inline-decision empty-inline">${escapeHtml(t("memoryDecision.noDecision"))}</div>`
+      : `<div class="decision-summary">${escapeHtml(t("memoryDecision.oneAtATime"))}</div>`;
+  }
+  const meta = `${decision.decision_type} · ${decision.source_event_id || "manual"} · ${decision.chosen_memory_type} · ${decision.chosen_scope}`;
+  const collapsed = `
+    <div class="decision-summary">
+      <strong>${escapeHtml(meta)}</strong>
+      <span>${escapeHtml(decision.reason)}</span>
+    </div>
+  `;
+  if (!expanded) return collapsed;
+  return `
+    ${collapsed}
+    <div class="inline-decision">
+      <div class="trace-help">${escapeHtml(t("memoryDecision.selectedHelp"))}</div>
+      <div class="decision-metrics compact-decision-metrics">
+        ${renderDecisionMetric("confidence", Number(decision.confidence || 0).toFixed(2))}
+        ${renderDecisionMetric("importance", Number(decision.importance || 0).toFixed(2))}
+        ${renderDecisionMetric("type", decision.chosen_memory_type)}
+        ${renderDecisionMetric("scope", decision.chosen_scope)}
+      </div>
+      <div class="decision-grid">
+        <section>
+          <h3>${t("memoryDecision.reason")}</h3>
+          <div class="trace-reason">${escapeHtml(decision.reason)}</div>
+        </section>
+        <section>
+          <h3>${t("memoryDecision.signals")}</h3>
+          <div class="signal-list">${renderSignals(decision.signals)}</div>
+        </section>
+      </div>
+    </div>
+  `;
 }
 
 function renderDecisionMetric(label, value) {
@@ -367,69 +400,6 @@ function renderSignals(signals) {
         <span>${escapeHtml(key)}</span>
         <strong>${escapeHtml(value)}</strong>
       </div>
-    `)
-    .join("");
-}
-
-function renderMemoryDecision(memory = memoryById(state.selectedMemoryId)) {
-  const body = $("memoryDecisionBody");
-  if (!body) return;
-  if (!memory) {
-    setText("memoryDecisionId", state.lang === "zh" ? "未选择 memory" : "no memory selected");
-    body.className = "decision-empty";
-    body.textContent = t("memoryDecision.empty");
-    return;
-  }
-
-  state.selectedMemoryId = memory.memory_id;
-  setText("memoryDecisionId", memory.memory_id);
-  const decisions = decisionsForMemory(memory.memory_id);
-  body.className = "memory-decision";
-  if (!decisions.length) {
-    body.innerHTML = `
-      <div class="trace-summary">
-        <div>
-          <div class="trace-query">${escapeHtml(memory.summary)}</div>
-          <div class="log-meta">${memory.memory_type} · ${memory.scope} · ${memory.agent_id || "system"} · ${memory.task_id || "global"}</div>
-        </div>
-      </div>
-      <div class="trace-help">${escapeHtml(t("memoryDecision.oneAtATime"))}</div>
-      <div class="decision-empty inline">${escapeHtml(t("memoryDecision.noDecision"))}</div>
-    `;
-    return;
-  }
-
-  body.innerHTML = decisions
-    .map((decision) => `
-      <article class="decision-card">
-        <div class="trace-summary">
-          <div>
-            <div class="trace-query">${escapeHtml(memory.summary)}</div>
-            <div class="log-meta">${decision.decision_type} · ${decision.source_event_id || "manual"} · ${fmtDate(decision.created_at)}</div>
-          </div>
-          <div class="trace-counts">
-            <span class="tag">${decision.chosen_memory_type}</span>
-            <span class="tag scope-${decision.chosen_scope}">${decision.chosen_scope}</span>
-          </div>
-        </div>
-        <div class="trace-help">${escapeHtml(t("memoryDecision.selectedHelp"))} ${escapeHtml(t("memoryDecision.oneAtATime"))}</div>
-        <div class="decision-metrics">
-          ${renderDecisionMetric("confidence", Number(decision.confidence || 0).toFixed(2))}
-          ${renderDecisionMetric("importance", Number(decision.importance || 0).toFixed(2))}
-          ${renderDecisionMetric("type", decision.chosen_memory_type)}
-          ${renderDecisionMetric("scope", decision.chosen_scope)}
-        </div>
-        <div class="decision-grid">
-          <section>
-            <h3>${t("memoryDecision.reason")}</h3>
-            <div class="trace-reason">${escapeHtml(decision.reason)}</div>
-          </section>
-          <section>
-            <h3>${t("memoryDecision.signals")}</h3>
-            <div class="signal-list">${renderSignals(decision.signals)}</div>
-          </section>
-        </div>
-      </article>
     `)
     .join("");
 }
@@ -618,7 +588,6 @@ async function refresh() {
   renderBars("statusBars", stats.status_counts);
   renderBars("roleBars", stats.role_counts);
   renderMemories();
-  renderMemoryDecision();
   renderEvents();
   renderTraces();
   renderTraceExplain();
@@ -658,10 +627,8 @@ $("retrieveForm").addEventListener("submit", runRetrieval);
 $("memoryList").addEventListener("click", (event) => {
   const target = event.target.closest("[data-memory-id]");
   if (!target) return;
-  state.selectedMemoryId = target.dataset.memoryId;
+  state.selectedMemoryId = state.selectedMemoryId === target.dataset.memoryId ? null : target.dataset.memoryId;
   renderMemories();
-  renderMemoryDecision();
-  document.getElementById("memoryDecision").scrollIntoView({ behavior: "smooth", block: "start" });
 });
 $("traceList").addEventListener("click", (event) => {
   const target = event.target.closest("[data-trace-id]");
