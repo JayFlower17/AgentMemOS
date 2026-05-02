@@ -1,0 +1,193 @@
+# AgentMemOS Project Build Log
+
+This document records implementation progress, design decisions, verification, and next-step direction for the AgentMemOS MVP.
+
+Current branch: `JayFlower`
+
+## Current Stage
+
+AgentMemOS has completed the first MVP loop and is now in the memory governance and self-maintenance phase.
+
+Completed core loop:
+
+1. Event ingestion through `POST /events`.
+2. Worker-based memory extraction.
+3. Scoped memory persistence with `agent-local`, `task-local`, `team-shared`, and `project-global`.
+4. Role-aware retrieval through `POST /retrieve`.
+5. Retrieval trace recording and explainability.
+6. Memory write decision traces.
+7. Memory status governance with `active`, `superseded`, and `archived`.
+8. Memory relation governance with `supersedes`, `conflicts_with`, and `duplicates`.
+9. Governance-aware retrieval.
+10. Agent-readable governance insights and relation suggestions.
+
+The dashboard remains a development aid for inspecting the system, not the primary product surface.
+
+## Build History
+
+### `46b5979` Initial AgentMemOS MVP
+
+- Built the initial FastAPI MVP.
+- Added event ingestion, memory persistence, and scoped retrieval.
+- Established the SQLite local development path.
+
+Verification:
+
+- Initial test suite passed.
+
+### `0d5059c` Add memory status audit history
+
+- Added memory status transitions.
+- Added auditable status decision history.
+- Introduced active/archive/supersede lifecycle semantics.
+
+### `165406a` Explain retrieval trace scoring
+
+- Added score parts for retrieval candidates.
+- Made retrieval scoring explainable by importance, confidence, scope, role/type affinity, and keyword overlap.
+
+### `eff895b` Add dashboard trace explain view
+
+- Added a trace explain panel to inspect retrieval behavior.
+- Exposed selected, scored, and filtered memories.
+
+### `5b4858d` Improve trace explain dashboard guidance
+
+- Improved dashboard guidance for reading trace explain output.
+- Clarified selected and filtered memory panels.
+
+### `523ba89` Add memory write decision traces
+
+- Added write decision traces for memory creation.
+- Recorded why a memory was extracted or manually created, including type, scope, confidence, importance, reason, and signals.
+
+### `222c911` Show memory write decisions on dashboard
+
+- Exposed memory write decisions in the dashboard.
+- Made write path and classification visible during development.
+
+### `cafc5aa` Add demo data seeding script
+
+- Added `examples/seed_demo_data.py`.
+- Seed script creates demo events, memories, and retrieval traces.
+
+### `a4b8a41` Prefer extracted memory decisions in dashboard
+
+- Adjusted dashboard selection to prefer more informative extracted decisions.
+
+### `9f5dbfc` Inline memory decisions in memory cards
+
+- Moved memory write decision details into memory cards.
+- Reduced the need for a separate decision-only panel.
+
+### `229934a` Document memory write paths in dashboard guide
+
+- Added guide text explaining `manual`, `extracted`, and memory type distinctions.
+
+### `350e625` Deduplicate repeated memory writes
+
+- Added exact normalized duplicate detection.
+- Reused existing active memory for repeated writes.
+- Added `deduplicated` memory decision trace instead of silently dropping duplicate writes.
+
+Verification:
+
+- `pytest -q`: passed.
+- `node --check agentmemos/static/app.js`: passed.
+
+### `54c8b24` Add memory governance relations
+
+- Added memory relation model and APIs.
+- Supported `supersedes`, `conflicts_with`, and `duplicates`.
+- `supersedes` automatically marks the target memory as `superseded`.
+- Added relation display to memory cards for development inspection.
+
+Verification:
+
+- `pytest -q`: 13 passed.
+
+### `540de6b` Clarify memory relation guide copy
+
+- Expanded the help card explanation for memory relations.
+- Clarified source/target direction and the effect of `supersedes`.
+
+### `149cae3` Apply memory governance during retrieval
+
+- Retrieval now applies memory governance.
+- `archived` and `superseded` memories are filtered out of selected results.
+- Retrieval trace records governance filter reasons.
+- Trace scored candidates can include open relation warnings.
+
+Verification:
+
+- `pytest -q`: 13 passed.
+- `node --check agentmemos/static/app.js`: passed.
+- Confirmed `/traces?limit=1` showed governance-aware filtering.
+
+### `2dfe92b` Add memory governance insights API
+
+- Added `GET /memory-insights`.
+- Aggregates open memory relations and retrieval traces into agent-readable action items.
+- Added insight types:
+  - `open_conflicts_with`
+  - `retrieval_miss`
+  - `low_confidence_selection`
+  - `governance_warning_selected`
+  - `open_duplicates`
+  - `open_supersedes`
+
+Verification:
+
+- `pytest -q`: 14 passed.
+- Confirmed `/memory-insights?limit=3` returned structured governance action items.
+
+### `cdd7e18` Suggest memory governance relations
+
+- Added `GET /memory-relation-suggestions`.
+- Suggests possible `duplicates` and `conflicts_with` relations between active memories.
+- Suggestions are read-only and do not mutate memory state.
+- Each suggestion includes confidence, evidence, reason, and suggested action.
+
+Verification:
+
+- `pytest -q`: 15 passed.
+- Confirmed `/memory-relation-suggestions?limit=3` returned duplicate candidates.
+
+## Current System Capabilities
+
+- Event-driven memory ingestion.
+- Manual memory creation.
+- Memory extraction from events.
+- Scoped visibility enforcement.
+- Role-aware retrieval.
+- Retrieval trace explainability.
+- Memory write decision traces.
+- Memory status audit history.
+- Memory relation governance.
+- Governance-aware retrieval.
+- Agent-readable memory insights.
+- Automatic relation suggestions.
+- Development dashboard for inspecting memories, events, traces, decisions, and relations.
+
+## Known Gaps
+
+- Extraction is still rule-based and MVP-level.
+- Relation suggestions use lexical heuristics, not embeddings or LLM judgment.
+- No persistent job queue yet.
+- SQLite remains the default local store; Postgres/pgvector integration is still pending.
+- No automatic application of suggestions yet.
+- No dedicated agent workflow for resolving insights.
+- SDK and adapters are still minimal.
+
+## Next Recommended Step
+
+Build an agent-action layer for governance suggestions:
+
+1. Add an endpoint to accept a suggestion and create the corresponding relation.
+2. Record the decision as an auditable governance action.
+3. Keep the default behavior conservative: suggestions remain read-only until accepted.
+4. Add tests for accepting duplicate/conflict suggestions.
+
+This would close the loop:
+
+`memory records -> suggestions -> accepted relation -> retrieval governance -> insights`
