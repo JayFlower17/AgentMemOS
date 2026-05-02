@@ -6,8 +6,8 @@ from sqlalchemy import select
 
 from agentmemos.config import get_settings
 from agentmemos.database import SessionLocal
-from agentmemos.extractor import extract_memory
-from agentmemos.models import AgentEventModel, MemoryRecordModel
+from agentmemos.extractor import explain_extraction, extract_memory
+from agentmemos.models import AgentEventModel, MemoryDecisionTraceModel, MemoryRecordModel
 
 
 class MemoryWorker:
@@ -52,10 +52,18 @@ class MemoryWorker:
             memory = extract_memory(event)
             if memory is None:
                 return
-            create_memory(db, memory)
+            reason, signals = explain_extraction(event, memory)
+            create_memory(db, memory, decision_type="extracted", decision_reason=reason, decision_signals=signals)
 
 
-def create_memory(db: Session, memory) -> MemoryRecordModel:
+def create_memory(
+    db: Session,
+    memory,
+    *,
+    decision_type: str = "manual",
+    decision_reason: str | None = None,
+    decision_signals: dict | None = None,
+) -> MemoryRecordModel:
     if memory.source_event_id:
         existing = db.scalar(
             select(MemoryRecordModel).where(MemoryRecordModel.source_event_id == memory.source_event_id)
@@ -77,4 +85,18 @@ def create_memory(db: Session, memory) -> MemoryRecordModel:
     db.add(record)
     db.commit()
     db.refresh(record)
+
+    decision = MemoryDecisionTraceModel(
+        memory_id=record.memory_id,
+        source_event_id=record.source_event_id,
+        decision_type=decision_type,
+        chosen_memory_type=record.memory_type,
+        chosen_scope=record.scope,
+        confidence=record.confidence,
+        importance=record.importance,
+        reason=decision_reason or "Memory was created explicitly through the API.",
+        signals=decision_signals or {"source": decision_type},
+    )
+    db.add(decision)
+    db.commit()
     return record

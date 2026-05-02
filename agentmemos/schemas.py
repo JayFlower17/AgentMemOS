@@ -60,6 +60,22 @@ class MemoryRecord(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MemoryDecisionTrace(BaseModel):
+    decision_id: str
+    memory_id: str
+    source_event_id: str | None
+    decision_type: str
+    chosen_memory_type: MemoryType
+    chosen_scope: MemoryScope
+    confidence: float
+    importance: float
+    reason: str
+    signals: dict[str, Any]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PromoteMemoryRequest(BaseModel):
     to_scope: MemoryScope
     reason: str = Field(min_length=1)

@@ -8,7 +8,8 @@ This MVP implements the first closed loop from the project plan:
 2. A background worker extracts structured memory records.
 3. Memories are persisted in SQLite by default.
 4. Retrieval returns role-aware scoped context through `POST /retrieve`.
-5. Every retrieval writes an auditable trace with selected memories, filtered memories, scores, and reasons, available at `GET /traces/{trace_id}`.
+5. Every memory write records why it was classified, scoped, and scored.
+6. Every retrieval writes an auditable trace with selected memories, filtered memories, scores, and reasons, available at `GET /traces/{trace_id}`.
 
 The default setup is intentionally light: no Postgres or Redis is required for local development. The app is structured so those can be added behind the storage and queue boundaries later.
 
@@ -102,9 +103,11 @@ The adapter retrieves role-aware memory before the step and emits a completion e
 - `POST /retrieve` returns scoped, role-aware memory context and stores a retrieval trace.
 - `POST /memories/{memory_id}/promote` promotes a memory to a broader scope.
 - `GET /memories/{memory_id}` returns one memory record.
+- `GET /memories/{memory_id}/decisions` returns write/classification decisions for a memory.
 - `GET /memories/{memory_id}/promotions` returns promotion history for a memory.
 - `POST /memories/{memory_id}/status` archives or restores a memory with a reason.
 - `GET /memories/{memory_id}/status-decisions` returns status change history for a memory.
+- `GET /memory-decisions` returns recent memory write decisions.
 - `GET /promotions` returns recent promotion decisions.
 - `GET /traces/{trace_id}` returns an audit trace for a retrieval.
 

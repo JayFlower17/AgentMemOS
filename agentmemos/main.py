@@ -12,6 +12,7 @@ from agentmemos.database import get_db, init_db
 from agentmemos.enums import MemoryStatus
 from agentmemos.models import (
     AgentEventModel,
+    MemoryDecisionTraceModel,
     MemoryRecordModel,
     MemoryStatusDecisionModel,
     PromotionDecisionModel,
@@ -25,6 +26,7 @@ from agentmemos.schemas import (
     DashboardStats,
     HealthResponse,
     MemoryCreate,
+    MemoryDecisionTrace,
     MemoryRecord,
     MemoryStatusDecision,
     PromotionDecision,
@@ -36,6 +38,7 @@ from agentmemos.schemas import (
 )
 from agentmemos.serializers import (
     event_to_schema,
+    memory_decision_to_schema,
     memory_to_schema,
     promotion_to_schema,
     status_decision_to_schema,
@@ -128,6 +131,19 @@ def get_memory(memory_id: str, db: Session = Depends(get_db)) -> MemoryRecord:
     return memory_to_schema(memory)
 
 
+@app.get("/memories/{memory_id}/decisions", response_model=list[MemoryDecisionTrace])
+def list_memory_decisions(memory_id: str, db: Session = Depends(get_db)) -> list[MemoryDecisionTrace]:
+    memory = db.get(MemoryRecordModel, memory_id)
+    if memory is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    stmt = (
+        select(MemoryDecisionTraceModel)
+        .where(MemoryDecisionTraceModel.memory_id == memory_id)
+        .order_by(MemoryDecisionTraceModel.created_at.desc())
+    )
+    return [memory_decision_to_schema(decision) for decision in db.scalars(stmt)]
+
+
 @app.get("/memories/{memory_id}/promotions", response_model=list[PromotionDecision])
 def list_memory_promotions(memory_id: str, db: Session = Depends(get_db)) -> list[PromotionDecision]:
     memory = db.get(MemoryRecordModel, memory_id)
@@ -152,6 +168,12 @@ def list_memory_status_decisions(memory_id: str, db: Session = Depends(get_db)) 
         .order_by(MemoryStatusDecisionModel.created_at.desc())
     )
     return [status_decision_to_schema(decision) for decision in db.scalars(stmt)]
+
+
+@app.get("/memory-decisions", response_model=list[MemoryDecisionTrace])
+def list_memory_decision_traces(limit: int = 50, db: Session = Depends(get_db)) -> list[MemoryDecisionTrace]:
+    stmt = select(MemoryDecisionTraceModel).order_by(MemoryDecisionTraceModel.created_at.desc()).limit(min(limit, 200))
+    return [memory_decision_to_schema(decision) for decision in db.scalars(stmt)]
 
 
 @app.get("/promotions", response_model=list[PromotionDecision])

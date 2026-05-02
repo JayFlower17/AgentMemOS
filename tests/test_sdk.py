@@ -75,6 +75,10 @@ def test_sdk_governance_read_methods():
         calls.append((method, path, payload))
         if path == "/memories/mem_1":
             return {"memory_id": "mem_1"}
+        if path == "/memories/mem_1/decisions":
+            return [{"decision_id": "mdec_1"}]
+        if path == "/memory-decisions?limit=3":
+            return []
         if path == "/memories/mem_1/promotions":
             return [{"decision_id": "promo_1"}]
         if path == "/memories/mem_1/status-decisions":
@@ -86,6 +90,8 @@ def test_sdk_governance_read_methods():
     client = AgentMemOSClient(transport=transport)
 
     assert client.get_memory("mem_1")["memory_id"] == "mem_1"
+    assert client.list_memory_decisions(memory_id="mem_1")[0]["decision_id"] == "mdec_1"
+    assert client.list_memory_decisions(limit=3) == []
     assert client.list_promotions(memory_id="mem_1")[0]["decision_id"] == "promo_1"
     assert client.list_status_decisions("mem_1")[0]["decision_id"] == "status_1"
     assert client.list_promotions(limit=5) == []

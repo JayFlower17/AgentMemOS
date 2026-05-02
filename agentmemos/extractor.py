@@ -25,6 +25,29 @@ def classify_event(event: AgentEventModel) -> tuple[MemoryType, MemoryScope, flo
     return MemoryType.working, MemoryScope.agent_local, 0.65, 0.45
 
 
+def explain_extraction(event: AgentEventModel, memory: MemoryCreate) -> tuple[str, dict]:
+    signals = {
+        "event_type": event.event_type,
+        "agent_role": event.agent_role,
+        "content_length": len(event.content),
+        "memory_type": memory.memory_type,
+        "scope": memory.scope,
+    }
+    if event.event_type == EventType.review_finding_created:
+        reason = "Review findings are shared as high-importance episodic memories for downstream review and coding context."
+    elif event.event_type == EventType.tool_result_observed and event.agent_role == AgentRole.coder:
+        reason = "Coder tool observations start as agent-local episodic memory to avoid leaking private scratch."
+    elif event.event_type == EventType.tool_result_observed:
+        reason = "Tool observations from non-coder roles are task-local episodic memory for task-level context."
+    elif event.event_type == EventType.task_completed:
+        reason = "Completed tasks can produce procedural team knowledge when the outcome may guide future work."
+    elif event.event_type in {EventType.task_created, EventType.subtask_completed}:
+        reason = "Task lifecycle events are working memory because they describe current task state or progress."
+    else:
+        reason = "Unclassified agent activity is kept as local working memory until promoted or refined."
+    return reason, signals
+
+
 def extract_memory(event: AgentEventModel) -> MemoryCreate | None:
     if not event.content.strip():
         return None

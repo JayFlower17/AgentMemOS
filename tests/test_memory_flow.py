@@ -42,6 +42,18 @@ def test_event_to_retrieval_trace_flow():
         assert trace["scored_memories"][0]["selected"] is True
         assert "score_parts" in trace["scored_memories"][0]
 
+        source_event_id = event_response.json()["event_id"]
+        task_memories = client.get("/memories?task_id=task_test_flow&limit=200").json()
+        extracted_memory = next(memory for memory in task_memories if memory["source_event_id"] == source_event_id)
+        memory_id = extracted_memory["memory_id"]
+        decisions_response = client.get(f"/memories/{memory_id}/decisions")
+        assert decisions_response.status_code == 200
+        decisions = decisions_response.json()
+        assert decisions[0]["decision_type"] == "extracted"
+        assert decisions[0]["source_event_id"] == source_event_id
+        assert decisions[0]["chosen_scope"] == "team-shared"
+        assert "Review findings" in decisions[0]["reason"]
+
 
 def test_agent_local_memory_is_hidden_from_other_agents():
     with TestClient(app) as client:
@@ -93,6 +105,10 @@ def test_dashboard_routes_are_available():
         memories_response = client.get("/memories")
         assert memories_response.status_code == 200
         assert isinstance(memories_response.json(), list)
+
+        decisions_response = client.get("/memory-decisions")
+        assert decisions_response.status_code == 200
+        assert isinstance(decisions_response.json(), list)
 
 
 def test_memory_detail_and_promotion_history():

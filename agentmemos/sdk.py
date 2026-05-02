@@ -132,6 +132,13 @@ class AgentMemOSClient:
     def get_memory(self, memory_id: str) -> dict[str, Any]:
         return self._request("GET", f"/memories/{memory_id}")
 
+    def list_memory_decisions(self, *, memory_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        path = f"/memories/{memory_id}/decisions" if memory_id else f"/memory-decisions?limit={limit}"
+        result = self._request("GET", path)
+        if not isinstance(result, list):
+            raise AgentMemOSError("Expected memory decisions endpoint to return a list")
+        return result
+
     def list_promotions(self, *, memory_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         path = f"/memories/{memory_id}/promotions" if memory_id else f"/promotions?limit={limit}"
         result = self._request("GET", path)

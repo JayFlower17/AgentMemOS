@@ -66,6 +66,24 @@ class RetrievalTraceModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class MemoryDecisionTraceModel(Base):
+    __tablename__ = "memory_decision_traces"
+
+    decision_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("mdec"))
+    memory_id: Mapped[str] = mapped_column(String(64), ForeignKey("memory_records.memory_id"), index=True)
+    source_event_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("agent_events.event_id"), nullable=True, index=True
+    )
+    decision_type: Mapped[str] = mapped_column(String(32), index=True)
+    chosen_memory_type: Mapped[str] = mapped_column(String(32))
+    chosen_scope: Mapped[str] = mapped_column(String(32))
+    confidence: Mapped[float] = mapped_column(Float)
+    importance: Mapped[float] = mapped_column(Float)
+    reason: Mapped[str] = mapped_column(Text)
+    signals: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class PromotionDecisionModel(Base):
     __tablename__ = "promotion_decisions"
 
