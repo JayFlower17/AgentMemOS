@@ -60,6 +60,8 @@ class RetrievalTraceModel(Base):
     searched_scopes: Mapped[list[str]] = mapped_column(JSON, default=list)
     selected_memories: Mapped[list[str]] = mapped_column(JSON, default=list)
     filtered_memories: Mapped[list[str]] = mapped_column(JSON, default=list)
+    scored_memories: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    filter_reasons: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
     reason: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 

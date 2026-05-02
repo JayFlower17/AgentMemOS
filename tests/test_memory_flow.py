@@ -36,7 +36,11 @@ def test_event_to_retrieval_trace_flow():
 
         trace_response = client.get(f"/traces/{body['trace_id']}")
         assert trace_response.status_code == 200
-        assert trace_response.json()["selected_memories"]
+        trace = trace_response.json()
+        assert trace["selected_memories"]
+        assert trace["scored_memories"]
+        assert trace["scored_memories"][0]["selected"] is True
+        assert "score_parts" in trace["scored_memories"][0]
 
 
 def test_agent_local_memory_is_hidden_from_other_agents():
@@ -67,7 +71,9 @@ def test_agent_local_memory_is_hidden_from_other_agents():
         body = retrieve_response.json()
         assert body["memories"] == []
         trace = client.get(f"/traces/{body['trace_id']}").json()
-        assert memory_response.json()["memory_id"] in trace["filtered_memories"]
+        memory_id = memory_response.json()["memory_id"]
+        assert memory_id in trace["filtered_memories"]
+        assert trace["filter_reasons"][memory_id] == "Filtered another agent's local memory."
 
 
 def test_dashboard_routes_are_available():

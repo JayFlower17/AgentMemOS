@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from agentmemos.config import get_settings
@@ -23,6 +23,23 @@ def init_db() -> None:
     from agentmemos import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    if settings.database_url.startswith("sqlite"):
+        _ensure_sqlite_trace_columns()
+
+
+def _ensure_sqlite_trace_columns() -> None:
+    inspector = inspect(engine)
+    if "retrieval_traces" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("retrieval_traces")}
+    missing_columns = {
+        "scored_memories": "JSON DEFAULT '[]'",
+        "filter_reasons": "JSON DEFAULT '{}'",
+    }
+    with engine.begin() as connection:
+        for column_name, column_type in missing_columns.items():
+            if column_name not in columns:
+                connection.execute(text(f"ALTER TABLE retrieval_traces ADD COLUMN {column_name} {column_type}"))
 
 
 def get_db() -> Generator[Session, None, None]:

@@ -114,6 +114,8 @@ class RetrievalTrace(BaseModel):
     searched_scopes: list[MemoryScope]
     selected_memories: list[str]
     filtered_memories: list[str]
+    scored_memories: list[dict[str, Any]] = Field(default_factory=list)
+    filter_reasons: dict[str, str] = Field(default_factory=dict)
     reason: str
     created_at: datetime
 

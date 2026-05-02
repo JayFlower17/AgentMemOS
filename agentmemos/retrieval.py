@@ -29,6 +29,18 @@ def _keyword_score(query: str, memory: MemoryRecordModel) -> float:
     return hits / len(terms)
 
 
+def _score_memory(req: RetrieveRequest, memory: MemoryRecordModel) -> tuple[float, dict[str, float]]:
+    type_weights = ROLE_TYPE_WEIGHTS[req.agent_role]
+    parts = {
+        "importance": memory.importance * 0.35,
+        "confidence": memory.confidence * 0.25,
+        "scope": SCOPE_WEIGHTS[MemoryScope(memory.scope)] * 0.2,
+        "role_type": type_weights[MemoryType(memory.memory_type)] * 0.12,
+        "keyword": _keyword_score(req.query, memory) * 0.08,
+    }
+    return sum(parts.values()), parts
+
+
 def _is_visible(req: RetrieveRequest, memory: MemoryRecordModel) -> tuple[bool, str | None]:
     scope = MemoryScope(memory.scope)
     if scope == MemoryScope.agent_local and memory.agent_id != req.agent_id:
@@ -50,26 +62,37 @@ def retrieve_memories(db: Session, req: RetrieveRequest) -> tuple[list[MemoryRec
 
     filtered: list[str] = []
     scored: list[tuple[float, MemoryRecordModel]] = []
+    filter_reasons: dict[str, str] = {}
+    scored_memories: list[dict] = []
     reasons: list[str] = []
-    type_weights = ROLE_TYPE_WEIGHTS[req.agent_role]
 
     for memory in candidates:
         visible, reason = _is_visible(req, memory)
         if not visible:
             filtered.append(memory.memory_id)
+            if reason:
+                filter_reasons[memory.memory_id] = reason
             if reason and reason not in reasons:
                 reasons.append(reason)
             continue
-        score = (
-            memory.importance * 0.35
-            + memory.confidence * 0.25
-            + SCOPE_WEIGHTS[MemoryScope(memory.scope)] * 0.2
-            + type_weights[MemoryType(memory.memory_type)] * 0.12
-            + _keyword_score(req.query, memory) * 0.08
-        )
+        score, parts = _score_memory(req, memory)
         scored.append((score, memory))
+        scored_memories.append(
+            {
+                "memory_id": memory.memory_id,
+                "score": round(score, 4),
+                "selected": False,
+                "scope": memory.scope,
+                "memory_type": memory.memory_type,
+                "score_parts": {key: round(value, 4) for key, value in parts.items()},
+            }
+        )
 
     selected = [memory for _, memory in sorted(scored, key=lambda item: item[0], reverse=True)[: req.limit]]
+    selected_ids = {memory.memory_id for memory in selected}
+    scored_memories = sorted(scored_memories, key=lambda item: item["score"], reverse=True)
+    for item in scored_memories:
+        item["selected"] = item["memory_id"] in selected_ids
     reason = "Selected memories by scope visibility, role/type affinity, confidence, importance, and keyword overlap."
     if reasons:
         reason = f"{reason} {' '.join(reasons)}"
@@ -82,6 +105,8 @@ def retrieve_memories(db: Session, req: RetrieveRequest) -> tuple[list[MemoryRec
         searched_scopes=[scope.value for scope in req.allowed_scopes],
         selected_memories=[memory.memory_id for memory in selected],
         filtered_memories=filtered,
+        scored_memories=scored_memories,
+        filter_reasons=filter_reasons,
         reason=reason,
     )
     db.add(trace)
