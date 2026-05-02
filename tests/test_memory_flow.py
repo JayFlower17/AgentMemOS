@@ -119,3 +119,34 @@ def test_memory_detail_and_promotion_history():
         assert len(history) == 1
         assert history[0]["from_scope"] == "task-local"
         assert history[0]["to_scope"] == "team-shared"
+
+
+def test_memory_status_history_is_auditable():
+    with TestClient(app) as client:
+        memory_response = client.post(
+            "/memories",
+            json={
+                "task_id": "task_status_test",
+                "agent_id": "reviewer_1",
+                "memory_type": "episodic",
+                "scope": "task-local",
+                "content": "This memory should be archived after the review closes.",
+            },
+        )
+        assert memory_response.status_code == 201
+        memory_id = memory_response.json()["memory_id"]
+
+        status_response = client.post(
+            f"/memories/{memory_id}/status",
+            json={"status": "archived", "reason": "Review finding is no longer active."},
+        )
+        assert status_response.status_code == 200
+        assert status_response.json()["status"] == "archived"
+
+        history_response = client.get(f"/memories/{memory_id}/status-decisions")
+        assert history_response.status_code == 200
+        history = history_response.json()
+        assert len(history) == 1
+        assert history[0]["memory_id"] == memory_id
+        assert history[0]["from_status"] == "active"
+        assert history[0]["to_status"] == "archived"

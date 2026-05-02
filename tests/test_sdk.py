@@ -77,6 +77,8 @@ def test_sdk_governance_read_methods():
             return {"memory_id": "mem_1"}
         if path == "/memories/mem_1/promotions":
             return [{"decision_id": "promo_1"}]
+        if path == "/memories/mem_1/status-decisions":
+            return [{"decision_id": "status_1"}]
         if path == "/promotions?limit=5":
             return []
         raise AssertionError(path)
@@ -85,4 +87,5 @@ def test_sdk_governance_read_methods():
 
     assert client.get_memory("mem_1")["memory_id"] == "mem_1"
     assert client.list_promotions(memory_id="mem_1")[0]["decision_id"] == "promo_1"
+    assert client.list_status_decisions("mem_1")[0]["decision_id"] == "status_1"
     assert client.list_promotions(limit=5) == []

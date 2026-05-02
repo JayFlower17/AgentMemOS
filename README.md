@@ -103,6 +103,8 @@ The adapter retrieves role-aware memory before the step and emits a completion e
 - `POST /memories/{memory_id}/promote` promotes a memory to a broader scope.
 - `GET /memories/{memory_id}` returns one memory record.
 - `GET /memories/{memory_id}/promotions` returns promotion history for a memory.
+- `POST /memories/{memory_id}/status` archives or restores a memory with a reason.
+- `GET /memories/{memory_id}/status-decisions` returns status change history for a memory.
 - `GET /promotions` returns recent promotion decisions.
 - `GET /traces/{trace_id}` returns an audit trace for a retrieval.
 

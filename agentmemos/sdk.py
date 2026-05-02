@@ -139,6 +139,12 @@ class AgentMemOSClient:
             raise AgentMemOSError("Expected promotions endpoint to return a list")
         return result
 
+    def list_status_decisions(self, memory_id: str) -> list[dict[str, Any]]:
+        result = self._request("GET", f"/memories/{memory_id}/status-decisions")
+        if not isinstance(result, list):
+            raise AgentMemOSError("Expected status decisions endpoint to return a list")
+        return result
+
     def list_memories(
         self,
         *,

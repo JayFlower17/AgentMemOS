@@ -26,6 +26,7 @@ from agentmemos.schemas import (
     HealthResponse,
     MemoryCreate,
     MemoryRecord,
+    MemoryStatusDecision,
     PromotionDecision,
     PromoteMemoryRequest,
     RetrievalTrace,
@@ -33,7 +34,13 @@ from agentmemos.schemas import (
     RetrieveResponse,
     UpdateMemoryStatusRequest,
 )
-from agentmemos.serializers import event_to_schema, memory_to_schema, promotion_to_schema, trace_to_schema
+from agentmemos.serializers import (
+    event_to_schema,
+    memory_to_schema,
+    promotion_to_schema,
+    status_decision_to_schema,
+    trace_to_schema,
+)
 from agentmemos.worker import MemoryWorker, create_memory
 
 
@@ -132,6 +139,19 @@ def list_memory_promotions(memory_id: str, db: Session = Depends(get_db)) -> lis
         .order_by(PromotionDecisionModel.created_at.desc())
     )
     return [promotion_to_schema(decision) for decision in db.scalars(stmt)]
+
+
+@app.get("/memories/{memory_id}/status-decisions", response_model=list[MemoryStatusDecision])
+def list_memory_status_decisions(memory_id: str, db: Session = Depends(get_db)) -> list[MemoryStatusDecision]:
+    memory = db.get(MemoryRecordModel, memory_id)
+    if memory is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    stmt = (
+        select(MemoryStatusDecisionModel)
+        .where(MemoryStatusDecisionModel.memory_id == memory_id)
+        .order_by(MemoryStatusDecisionModel.created_at.desc())
+    )
+    return [status_decision_to_schema(decision) for decision in db.scalars(stmt)]
 
 
 @app.get("/promotions", response_model=list[PromotionDecision])
