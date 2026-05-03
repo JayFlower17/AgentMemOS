@@ -25,7 +25,7 @@ from agentmemos.models import (
     PromotionDecisionModel,
     RetrievalTraceModel,
 )
-from agentmemos.queue import MemoryJob
+from agentmemos.queue import MemoryJob, create_job_queue
 from agentmemos.repositories import EventRepository, GovernanceRepository, MemoryRepository, TraceRepository
 from agentmemos.retrieval import pack_context, retrieve_memories
 from agentmemos.schemas import (
@@ -72,7 +72,12 @@ from agentmemos.worker import MemoryWorker, create_memory
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    worker = MemoryWorker()
+    job_queue = create_job_queue(
+        backend=settings.job_queue_backend,
+        redis_url=settings.redis_url,
+        redis_queue_name=settings.redis_queue_name,
+    )
+    worker = MemoryWorker(job_queue=job_queue)
     await worker.start()
     governance_scheduler = GovernanceScheduler(job_queue=worker.job_queue)
     await governance_scheduler.start()

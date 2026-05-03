@@ -16,6 +16,9 @@ dev = [
     "httpx>=0.27",
     "pytest>=8",
 ]
+redis = [
+    "redis>=5",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

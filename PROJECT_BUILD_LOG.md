@@ -351,6 +351,25 @@ Verification:
 - `python -m py_compile agentmemos/config.py agentmemos/retrieval.py agentmemos/main.py`: passed.
 - `pytest -q`: 45 passed.
 
+### Add optional Redis job queue
+
+- Added `RedisJobQueue` behind the existing `JobQueue` interface.
+- Added JSON serialization/deserialization for typed `MemoryJob` payloads.
+- Added `create_job_queue(...)` factory.
+- Added optional dependency group `redis`.
+- Added queue backend configuration:
+  - `AGENTMEMOS_JOB_QUEUE_BACKEND`
+  - `AGENTMEMOS_REDIS_URL`
+  - `AGENTMEMOS_REDIS_QUEUE_NAME`
+- FastAPI lifespan now constructs the configured queue and passes it to `MemoryWorker`.
+- Default backend remains `memory`, so local development and tests still use `InMemoryJobQueue`.
+- Added tests for job JSON roundtrip, queue factory defaults, and Redis queue construction with a fake Redis client.
+
+Verification:
+
+- `python -m py_compile agentmemos/queue.py agentmemos/config.py agentmemos/main.py`: passed.
+- `pytest -q`: 48 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -376,6 +395,7 @@ Verification:
 - Embedding/vector retrieval boundary with default lexical retrieval preserved.
 - Embedding indexing job backed by local `InMemoryVectorStore`.
 - Optional vector-assisted retrieval behind disabled-by-default configuration.
+- Optional Redis-backed `JobQueue` adapter with in-memory default preserved.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -384,7 +404,7 @@ Verification:
 
 - Extraction is now structured and auditable, but still rule-based; LLM-assisted extraction is pending.
 - Relation suggestions and retrieval still use lexical heuristics by default; vector-assisted retrieval can be enabled locally but is not backed by pgvector yet.
-- Governance and extraction now use a typed in-process job queue boundary, but no Redis/distributed queue implementation yet.
+- Governance, extraction, and embedding indexing use a typed job queue; Redis adapter exists but is optional and not the default.
 - SQLite remains the default local store behind thin repositories; Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
@@ -394,10 +414,10 @@ Verification:
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add optional Redis queue implementation behind the existing `JobQueue` interface.
+1. Prepare pgvector storage for durable/shared vector indexes.
 2. Keep SQLite repositories and in-process workers as the default implementation.
-3. Prepare pgvector storage for durable/shared vector indexes.
-4. Add SDK or agent-framework adapters on top of the service layer.
+3. Add SDK or agent-framework adapters on top of the service layer.
+4. Add SSE/MCP integration once the core service boundary settles.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 

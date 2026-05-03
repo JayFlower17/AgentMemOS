@@ -7,7 +7,7 @@ from agentmemos.database import SessionLocal
 from agentmemos.enums import AgentRole, EventType
 from agentmemos.main import app
 from agentmemos.models import AgentEventModel, new_id
-from agentmemos.queue import InMemoryJobQueue, JobType, MemoryJob
+from agentmemos.queue import InMemoryJobQueue, JobType, MemoryJob, RedisJobQueue, create_job_queue
 from agentmemos.worker import MemoryWorker
 
 
@@ -33,6 +33,56 @@ def test_memory_job_can_represent_embedding_indexing():
 
     assert job.job_type == JobType.embed_memory
     assert job.payload["memory_id"] == "mem_queue_test"
+
+
+def test_memory_job_json_roundtrip_preserves_type_and_payload():
+    job = MemoryJob.governance_pass(
+        actor="governance_test",
+        duplicate_confidence_threshold=0.91,
+        max_accepts=2,
+    )
+
+    restored = MemoryJob.from_json(job.to_json())
+
+    assert restored == job
+
+
+def test_create_job_queue_defaults_to_in_memory_queue():
+    queue = create_job_queue()
+
+    assert isinstance(queue, InMemoryJobQueue)
+
+
+def test_create_job_queue_can_build_redis_queue_when_client_is_available(monkeypatch):
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, url):
+            instance = cls()
+            instance.url = url
+            return instance
+
+        def rpush(self, queue_name, value):
+            self.queue_name = queue_name
+            self.value = value
+
+        def blpop(self, queue_name):
+            return queue_name, MemoryJob.extract_memory("evt_fake").to_json().encode()
+
+    import sys
+    import types
+
+    fake_module = types.SimpleNamespace(Redis=FakeRedis)
+    monkeypatch.setitem(sys.modules, "redis", fake_module)
+
+    queue = create_job_queue(
+        backend="redis",
+        redis_url="redis://example/0",
+        redis_queue_name="agentmemos:test",
+    )
+
+    assert isinstance(queue, RedisJobQueue)
+    assert queue.redis_url == "redis://example/0"
+    assert queue.queue_name == "agentmemos:test"
 
 
 def test_worker_processes_extract_memory_job():

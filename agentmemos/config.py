@@ -15,6 +15,9 @@ class Settings(BaseModel):
     app_name: str = "AgentMemOS"
     database_url: str = Field(default="sqlite:///./agentmemos.db")
     extraction_delay_seconds: float = 0.0
+    job_queue_backend: str = Field(default="memory", pattern="^(memory|redis)$")
+    redis_url: str = "redis://localhost:6379/0"
+    redis_queue_name: str = "agentmemos:jobs"
     vector_retrieval_enabled: bool = False
     vector_retrieval_weight: float = Field(default=0.0, ge=0, le=1)
     governance_scheduler_enabled: bool = False
@@ -30,6 +33,9 @@ def get_settings() -> Settings:
         app_name=os.getenv("AGENTMEMOS_APP_NAME", "AgentMemOS"),
         database_url=os.getenv("AGENTMEMOS_DATABASE_URL", "sqlite:///./agentmemos.db"),
         extraction_delay_seconds=float(os.getenv("AGENTMEMOS_EXTRACTION_DELAY_SECONDS", "0")),
+        job_queue_backend=os.getenv("AGENTMEMOS_JOB_QUEUE_BACKEND", "memory"),
+        redis_url=os.getenv("AGENTMEMOS_REDIS_URL", "redis://localhost:6379/0"),
+        redis_queue_name=os.getenv("AGENTMEMOS_REDIS_QUEUE_NAME", "agentmemos:jobs"),
         vector_retrieval_enabled=env_bool("AGENTMEMOS_VECTOR_RETRIEVAL_ENABLED", False),
         vector_retrieval_weight=float(os.getenv("AGENTMEMOS_VECTOR_RETRIEVAL_WEIGHT", "0")),
         governance_scheduler_enabled=env_bool("AGENTMEMOS_GOVERNANCE_SCHEDULER_ENABLED", False),
