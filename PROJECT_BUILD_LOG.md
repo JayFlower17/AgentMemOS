@@ -407,6 +407,23 @@ Verification:
 - `python -m py_compile agentmemos/sdk.py examples/sdk_usage.py`: passed.
 - `pytest -q`: 54 passed.
 
+### Add LangGraph-style adapter
+
+- Added `LangGraphMemoryAdapter` without requiring `langgraph` as a dependency.
+- Added graph/node-style hooks:
+  - `before_node(state)`
+  - `after_node(before, after)`
+  - `wrap_node(node)`
+- Adapter retrieves memory before node execution and emits an AgentMemOS event after node execution.
+- Preserved existing `MemoryStepAdapter`.
+- Updated adapter example to default to local port `8014` and show both step and graph-style wrapping.
+- Added adapter tests for before/after hooks and node wrapping.
+
+Verification:
+
+- `python -m py_compile agentmemos/adapters.py examples/adapter_usage.py`: passed.
+- `pytest -q`: 56 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -435,6 +452,7 @@ Verification:
 - Optional Redis-backed `JobQueue` adapter with in-memory default preserved.
 - Durable SQLite vector store option with in-memory default preserved.
 - Expanded Python SDK client for external agent and adapter integration.
+- LangGraph-style adapter for graph/node state workflows.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -447,15 +465,15 @@ Verification:
 - SQLite remains the default local store behind thin repositories; local durable vector storage exists, while Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
-- SDK covers core APIs; external agent-framework adapters are still minimal.
+- SDK covers core APIs; LangGraph-style adapter exists, while MCP/OpenAI Agents/AutoGen/CrewAI adapters are still pending.
 
 ## Next Recommended Step
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add a LangGraph-style adapter on top of the SDK.
+1. Add MCP tool/server integration for agent tool access.
 2. Prepare pgvector storage for shared production vector indexes.
-3. Add SSE/MCP integration once the core service boundary settles.
+3. Add SSE integration for realtime memory/governance updates.
 4. Add operational documentation for Redis and SQLite vector store configuration.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
