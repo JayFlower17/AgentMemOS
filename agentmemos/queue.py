@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 class JobType(StrEnum):
     extract_memory = "extract_memory"
+    embed_memory = "embed_memory"
     governance_pass = "governance_pass"
 
 
@@ -17,6 +18,10 @@ class MemoryJob:
     @classmethod
     def extract_memory(cls, event_id: str) -> "MemoryJob":
         return cls(JobType.extract_memory, {"event_id": event_id})
+
+    @classmethod
+    def embed_memory(cls, memory_id: str) -> "MemoryJob":
+        return cls(JobType.embed_memory, {"memory_id": memory_id})
 
     @classmethod
     def governance_pass(

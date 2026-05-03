@@ -11,11 +11,19 @@ from agentmemos.governance import run_governance
 from agentmemos.models import AgentEventModel, MemoryDecisionTraceModel, MemoryRecordModel
 from agentmemos.queue import InMemoryJobQueue, JobQueue, JobType, MemoryJob
 from agentmemos.schemas import RunGovernanceRequest
+from agentmemos.vector import EmbeddingProvider, HashingEmbeddingProvider, InMemoryVectorStore, VectorStore, memory_embedding_text
 
 
 class MemoryWorker:
-    def __init__(self, job_queue: JobQueue | None = None) -> None:
+    def __init__(
+        self,
+        job_queue: JobQueue | None = None,
+        embedding_provider: EmbeddingProvider | None = None,
+        vector_store: VectorStore | None = None,
+    ) -> None:
         self.job_queue = job_queue or InMemoryJobQueue()
+        self.embedding_provider = embedding_provider or HashingEmbeddingProvider()
+        self.vector_store = vector_store or InMemoryVectorStore()
         self._task: asyncio.Task | None = None
         self._running = False
         self.settings = get_settings()
@@ -54,21 +62,36 @@ class MemoryWorker:
                 await asyncio.sleep(self.settings.extraction_delay_seconds)
             event_id = str(job.payload.get("event_id") or "")
             if event_id:
-                await asyncio.to_thread(self._process_event, event_id)
+                memory = await asyncio.to_thread(self._process_event, event_id)
+                if memory is not None:
+                    await self.enqueue_job(MemoryJob.embed_memory(memory.memory_id))
+            return
+        if job.job_type == JobType.embed_memory:
+            memory_id = str(job.payload.get("memory_id") or "")
+            if memory_id:
+                await asyncio.to_thread(self._process_embedding, memory_id)
             return
         if job.job_type == JobType.governance_pass:
             await asyncio.to_thread(self._process_governance_pass, job)
 
-    def _process_event(self, event_id: str) -> None:
+    def _process_event(self, event_id: str) -> MemoryRecordModel | None:
         with SessionLocal() as db:
             event = db.get(AgentEventModel, event_id)
             if event is None:
-                return
+                return None
             memory = extract_memory(event)
             if memory is None:
-                return
+                return None
             reason, signals = explain_extraction(event, memory)
-            create_memory(db, memory, decision_type="extracted", decision_reason=reason, decision_signals=signals)
+            return create_memory(db, memory, decision_type="extracted", decision_reason=reason, decision_signals=signals)
+
+    def _process_embedding(self, memory_id: str) -> None:
+        with SessionLocal() as db:
+            memory = db.get(MemoryRecordModel, memory_id)
+            if memory is None:
+                return
+            embedding = self.embedding_provider.embed(memory_embedding_text(memory))
+            self.vector_store.upsert(memory.memory_id, embedding)
 
     def _process_governance_pass(self, job: MemoryJob) -> None:
         payload = RunGovernanceRequest(

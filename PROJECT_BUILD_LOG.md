@@ -320,6 +320,21 @@ Verification:
 - `python -m py_compile agentmemos/vector.py agentmemos/retrieval.py`: passed.
 - `pytest -q`: 40 passed.
 
+### Add embedding indexing job
+
+- Added `embed_memory` as a typed `JobType`.
+- Added `MemoryJob.embed_memory(memory_id)`.
+- `MemoryWorker` now owns an `EmbeddingProvider` and `VectorStore`.
+- `MemoryWorker` can process `embed_memory` jobs and index memory text into `InMemoryVectorStore`.
+- `extract_memory` jobs now enqueue `embed_memory` after a memory record is created.
+- Manual memory creation through `POST /memories` now also enqueues `embed_memory`.
+- Added queue/worker tests for embedding job representation, extraction-to-indexing handoff, and vector store indexing.
+
+Verification:
+
+- `python -m py_compile agentmemos/queue.py agentmemos/worker.py agentmemos/main.py`: passed.
+- `pytest -q`: 43 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -343,6 +358,7 @@ Verification:
 - Repository boundary for event, memory, trace, and governance persistence access.
 - Service-layer orchestration for event ingestion, memory lifecycle, and relation resolution.
 - Embedding/vector retrieval boundary with default lexical retrieval preserved.
+- Embedding indexing job backed by local `InMemoryVectorStore`.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -350,7 +366,7 @@ Verification:
 ## Known Gaps
 
 - Extraction is now structured and auditable, but still rule-based; LLM-assisted extraction is pending.
-- Relation suggestions and retrieval still use lexical heuristics by default; embedding/vector interfaces exist but are not yet active in API retrieval.
+- Relation suggestions and retrieval still use lexical heuristics by default; embedding/vector indexing exists locally but is not yet active in API retrieval ranking.
 - Governance and extraction now use a typed in-process job queue boundary, but no Redis/distributed queue implementation yet.
 - SQLite remains the default local store behind thin repositories; Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
@@ -361,7 +377,7 @@ Verification:
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add an optional embedding indexing job behind the existing `JobQueue`.
+1. Add optional vector-assisted retrieval behind a disabled-by-default configuration flag.
 2. Keep SQLite repositories and in-process workers as the default implementation.
 3. Add optional Redis queue implementation behind the existing `JobQueue` interface.
 4. Add SDK or agent-framework adapters on top of the service layer.

@@ -8,6 +8,7 @@ from agentmemos.enums import AgentRole, EventType
 from agentmemos.main import app
 from agentmemos.models import AgentEventModel, new_id
 from agentmemos.queue import InMemoryJobQueue, JobType, MemoryJob
+from agentmemos.worker import MemoryWorker
 
 
 def test_in_memory_job_queue_preserves_typed_jobs():
@@ -25,6 +26,13 @@ def test_in_memory_job_queue_preserves_typed_jobs():
 
     assert received.job_type == JobType.extract_memory
     assert received.payload["event_id"] == "evt_queue_test"
+
+
+def test_memory_job_can_represent_embedding_indexing():
+    job = MemoryJob.embed_memory("mem_queue_test")
+
+    assert job.job_type == JobType.embed_memory
+    assert job.payload["memory_id"] == "mem_queue_test"
 
 
 def test_worker_processes_extract_memory_job():
@@ -51,6 +59,56 @@ def test_worker_processes_extract_memory_job():
         extracted = [memory for memory in memories if memory["source_event_id"] == event_id]
         assert len(extracted) == 1
         assert extracted[0]["scope"] == "team-shared"
+
+
+def test_extract_memory_job_enqueues_embedding_index_job():
+    with TestClient(app) as client:
+        task_id = f"task_queue_extract_embed_{uuid4().hex}"
+        event_id = new_id("evt")
+        with SessionLocal() as db:
+            db.add(
+                AgentEventModel(
+                    event_id=event_id,
+                    event_type=EventType.review_finding_created,
+                    task_id=task_id,
+                    agent_id="reviewer_1",
+                    agent_role=AgentRole.reviewer,
+                    content="The reviewer found that retries need bounded backoff before approval.",
+                    event_metadata={},
+                )
+            )
+            db.commit()
+
+        worker = MemoryWorker(job_queue=InMemoryJobQueue())
+        asyncio.run(worker._process_job(MemoryJob.extract_memory(event_id)))
+        queued = asyncio.run(worker.job_queue.dequeue())
+        worker.job_queue.task_done()
+
+        assert queued.job_type == JobType.embed_memory
+        assert queued.payload["memory_id"].startswith("mem_")
+
+
+def test_worker_processes_embed_memory_job_into_vector_store():
+    with TestClient(app) as client:
+        response = client.post(
+            "/memories",
+            json={
+                "task_id": f"task_queue_embed_{uuid4().hex}",
+                "agent_id": "reviewer_1",
+                "memory_type": "episodic",
+                "scope": "team-shared",
+                "content": "Retry policy requires bounded backoff before approval.",
+            },
+        )
+        assert response.status_code == 201
+        memory_id = response.json()["memory_id"]
+
+        asyncio.run(client.app.state.memory_worker._process_job(MemoryJob.embed_memory(memory_id)))
+        query_embedding = client.app.state.memory_worker.embedding_provider.embed("bounded retry backoff")
+        scores = client.app.state.memory_worker.vector_store.search(query_embedding, candidate_ids=[memory_id])
+
+        assert memory_id in scores
+        assert scores[memory_id] > 0
 
 
 def test_event_ingestion_enqueues_extract_memory_job():

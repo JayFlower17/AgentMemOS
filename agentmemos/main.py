@@ -25,6 +25,7 @@ from agentmemos.models import (
     PromotionDecisionModel,
     RetrievalTraceModel,
 )
+from agentmemos.queue import MemoryJob
 from agentmemos.repositories import EventRepository, GovernanceRepository, MemoryRepository, TraceRepository
 from agentmemos.retrieval import pack_context, retrieve_memories
 from agentmemos.schemas import (
@@ -108,8 +109,10 @@ async def ingest_event(request: Request, payload: AgentEventCreate, db: Session 
 
 
 @app.post("/memories", response_model=MemoryRecord, status_code=status.HTTP_201_CREATED)
-def create_memory_endpoint(payload: MemoryCreate, db: Session = Depends(get_db)) -> MemoryRecord:
-    return memory_to_schema(create_memory(db, payload))
+async def create_memory_endpoint(request: Request, payload: MemoryCreate, db: Session = Depends(get_db)) -> MemoryRecord:
+    memory = create_memory(db, payload)
+    await request.app.state.memory_worker.enqueue_job(MemoryJob.embed_memory(memory.memory_id))
+    return memory_to_schema(memory)
 
 
 @app.get("/events", response_model=list[AgentEvent])
