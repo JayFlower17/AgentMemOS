@@ -808,6 +808,16 @@ Verification:
   - Model: `text-embedding-3-large`.
   - Returned dimensions: `3072`.
 
+### Add Chinese project overview document
+
+- Added `docs/AgentMemOS_中文项目全貌介绍.md`.
+- The document explains AgentMemOS from background, target scenarios, core concepts, technical architecture, major features, pgvector/RAG relationship, Redis worker operations, deployment modes, framework adapters, MCP integration, current completion status, and production gaps.
+- Copied the document to the desktop for direct reading and sharing.
+
+Verification:
+
+- Markdown documentation generated and copied locally.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
