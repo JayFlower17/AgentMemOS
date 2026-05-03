@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from agentmemos.database import SessionLocal
-from agentmemos.enums import AgentRole, EventType
+from agentmemos.enums import AgentRole, EventType, MemoryScope, MemoryType
 from agentmemos.main import app
 from agentmemos.models import AgentEventModel, new_id
 from agentmemos.queue import InMemoryJobQueue, JobType, MemoryJob, RedisJobQueue, create_job_queue
@@ -241,6 +241,59 @@ def test_worker_processes_extract_memory_job():
         extracted = [memory for memory in memories if memory["source_event_id"] == event_id]
         assert len(extracted) == 1
         assert extracted[0]["scope"] == "team-shared"
+
+
+def test_worker_can_use_injected_extractor_provider():
+    class FakeExtractor:
+        name = "fake"
+
+        def extract(self, event):
+            from agentmemos.extractor import ExtractionResult
+            from agentmemos.schemas import MemoryCreate
+
+            memory = MemoryCreate(
+                task_id=event.task_id,
+                agent_id=event.agent_id,
+                memory_type=MemoryType.episodic,
+                scope=MemoryScope.task_local,
+                content=f"fake extracted: {event.content}",
+                summary="fake extracted",
+                confidence=0.77,
+                importance=0.66,
+                source_event_id=event.event_id,
+            )
+            return ExtractionResult(
+                should_write=True,
+                memory=memory,
+                reason="Fake extractor used for worker injection test.",
+                signals={"extractor": "fake"},
+                provider="fake",
+            )
+
+    with TestClient(app) as client:
+        task_id = f"task_queue_fake_extractor_{uuid4().hex}"
+        event_id = new_id("evt")
+        with SessionLocal() as db:
+            db.add(
+                AgentEventModel(
+                    event_id=event_id,
+                    event_type=EventType.agent_message_sent,
+                    task_id=task_id,
+                    agent_id="coder_1",
+                    agent_role=AgentRole.coder,
+                    content="custom provider path",
+                    event_metadata={},
+                )
+            )
+            db.commit()
+
+        worker = MemoryWorker(job_queue=InMemoryJobQueue(), extractor_provider=FakeExtractor())
+        memory = worker._process_event(event_id)
+
+        assert memory is not None
+        assert memory.content == "fake extracted: custom provider path"
+        decisions = client.get(f"/memories/{memory.memory_id}/decisions").json()
+        assert decisions[0]["signals"]["extractor"] == "fake"
 
 
 def test_extract_memory_job_enqueues_embedding_index_job():

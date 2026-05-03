@@ -7,7 +7,7 @@ from sqlalchemy import select
 from agentmemos.config import get_settings
 from agentmemos.database import SessionLocal
 from agentmemos.event_bus import MemoryEventBus
-from agentmemos.extractor import explain_extraction, extract_memory
+from agentmemos.extractor import ExtractorProvider, create_extractor_provider
 from agentmemos.governance import run_governance
 from agentmemos.models import AgentEventModel, MemoryDecisionTraceModel, MemoryRecordModel
 from agentmemos.queue import InMemoryJobQueue, JobQueue, JobType, MemoryJob
@@ -22,14 +22,18 @@ class MemoryWorker:
         embedding_provider: EmbeddingProvider | None = None,
         vector_store: VectorStore | None = None,
         event_bus: MemoryEventBus | None = None,
+        extractor_provider: ExtractorProvider | None = None,
     ) -> None:
         self.job_queue = job_queue or InMemoryJobQueue()
         self.embedding_provider = embedding_provider or HashingEmbeddingProvider()
         self.vector_store = vector_store or InMemoryVectorStore()
         self.event_bus = event_bus
+        self.extractor_provider = extractor_provider
         self._task: asyncio.Task | None = None
         self._running = False
         self.settings = get_settings()
+        if self.extractor_provider is None:
+            self.extractor_provider = create_extractor_provider(backend=self.settings.extractor_backend)
 
     async def start(self) -> None:
         self._running = True
@@ -130,11 +134,16 @@ class MemoryWorker:
             event = db.get(AgentEventModel, event_id)
             if event is None:
                 return None
-            memory = extract_memory(event)
-            if memory is None:
+            result = self.extractor_provider.extract(event)
+            if not result.should_write or result.memory is None:
                 return None
-            reason, signals = explain_extraction(event, memory)
-            return create_memory(db, memory, decision_type="extracted", decision_reason=reason, decision_signals=signals)
+            return create_memory(
+                db,
+                result.memory,
+                decision_type="extracted",
+                decision_reason=result.reason,
+                decision_signals=result.signals,
+            )
 
     def _process_embedding(self, memory_id: str) -> bool:
         with SessionLocal() as db:

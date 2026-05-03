@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Protocol
 
 from agentmemos.enums import AgentRole, EventType, MemoryScope, MemoryType
 from agentmemos.models import AgentEventModel
@@ -13,6 +14,21 @@ class ExtractionDecision:
     importance: float
     reason: str
     applied_rules: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ExtractionResult:
+    should_write: bool
+    memory: MemoryCreate | None
+    reason: str
+    signals: dict
+    provider: str
+
+
+class ExtractorProvider(Protocol):
+    name: str
+
+    def extract(self, event: AgentEventModel) -> ExtractionResult: ...
 
 
 def summarize(text: str, max_chars: int = 140) -> str:
@@ -196,10 +212,9 @@ def classify_event_with_signals(event: AgentEventModel) -> ExtractionDecision:
     )
 
 
-def explain_extraction(event: AgentEventModel, memory: MemoryCreate) -> tuple[str, dict]:
+def build_extraction_signals(event: AgentEventModel, memory: MemoryCreate, decision: ExtractionDecision) -> dict:
     signals = detect_content_signals(event.content)
-    decision = classify_event_with_signals(event)
-    signals = {
+    return {
         **signals,
         "event_type": str(event.event_type),
         "agent_role": str(event.agent_role),
@@ -209,21 +224,60 @@ def explain_extraction(event: AgentEventModel, memory: MemoryCreate) -> tuple[st
         "applied_rules": list(decision.applied_rules),
         "extractor": "structured-rule-v2",
     }
+
+
+class RuleBasedExtractor:
+    name = "rule"
+
+    def extract(self, event: AgentEventModel) -> ExtractionResult:
+        if not event.content.strip():
+            return ExtractionResult(
+                should_write=False,
+                memory=None,
+                reason="Empty event content is not written to memory.",
+                signals={
+                    "event_type": str(event.event_type),
+                    "agent_role": str(event.agent_role),
+                    "content_length": len(event.content),
+                    "extractor": "structured-rule-v2",
+                    "applied_rules": ["content:empty"],
+                },
+                provider=self.name,
+            )
+        decision = classify_event_with_signals(event)
+        memory = MemoryCreate(
+            task_id=event.task_id,
+            agent_id=event.agent_id,
+            memory_type=decision.memory_type,
+            scope=decision.scope,
+            content=event.content,
+            summary=summarize(event.content),
+            confidence=decision.confidence,
+            importance=decision.importance,
+            source_event_id=event.event_id,
+        )
+        return ExtractionResult(
+            should_write=True,
+            memory=memory,
+            reason=decision.reason,
+            signals=build_extraction_signals(event, memory, decision),
+            provider=self.name,
+        )
+
+
+def create_extractor_provider(*, backend: str = "rule") -> ExtractorProvider:
+    if backend == "rule":
+        return RuleBasedExtractor()
+    raise ValueError(f"Unsupported extractor backend: {backend}")
+
+
+def explain_extraction(event: AgentEventModel, memory: MemoryCreate) -> tuple[str, dict]:
+    result = RuleBasedExtractor().extract(event)
+    if result.memory is None:
+        return result.reason, result.signals
+    return result.reason, build_extraction_signals(event, memory, classify_event_with_signals(event))
     return decision.reason, signals
 
 
 def extract_memory(event: AgentEventModel) -> MemoryCreate | None:
-    if not event.content.strip():
-        return None
-    decision = classify_event_with_signals(event)
-    return MemoryCreate(
-        task_id=event.task_id,
-        agent_id=event.agent_id,
-        memory_type=decision.memory_type,
-        scope=decision.scope,
-        content=event.content,
-        summary=summarize(event.content),
-        confidence=decision.confidence,
-        importance=decision.importance,
-        source_event_id=event.event_id,
-    )
+    return RuleBasedExtractor().extract(event).memory

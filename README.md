@@ -73,6 +73,29 @@ With the server running:
 $env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8010"; python examples/sdk_usage.py
 ```
 
+## Memory Extraction
+
+AgentMemOS uses an extractor provider to decide whether an event should become memory and how it should be classified.
+
+The default extractor is local and rule-based:
+
+```powershell
+$env:AGENTMEMOS_EXTRACTOR_BACKEND="rule"
+```
+
+It returns a structured extraction result with:
+
+- `should_write`
+- memory type
+- scope
+- summary
+- confidence
+- importance
+- reason
+- auditable signals
+
+The provider boundary is designed so an optional LLM extractor can be added later without replacing the local default.
+
 ## Governance Agent Example
 
 Run the conservative governance agent loop against a running server:

@@ -15,6 +15,7 @@ class Settings(BaseModel):
     app_name: str = "AgentMemOS"
     database_url: str = Field(default="sqlite:///./agentmemos.db")
     extraction_delay_seconds: float = 0.0
+    extractor_backend: str = Field(default="rule", pattern="^(rule)$")
     job_queue_backend: str = Field(default="memory", pattern="^(memory|redis)$")
     api_worker_enabled: bool = True
     job_max_attempts: int = Field(default=3, ge=1, le=20)
@@ -42,6 +43,7 @@ def get_settings() -> Settings:
         app_name=os.getenv("AGENTMEMOS_APP_NAME", "AgentMemOS"),
         database_url=os.getenv("AGENTMEMOS_DATABASE_URL", "sqlite:///./agentmemos.db"),
         extraction_delay_seconds=float(os.getenv("AGENTMEMOS_EXTRACTION_DELAY_SECONDS", "0")),
+        extractor_backend=os.getenv("AGENTMEMOS_EXTRACTOR_BACKEND", "rule"),
         job_queue_backend=os.getenv("AGENTMEMOS_JOB_QUEUE_BACKEND", "memory"),
         api_worker_enabled=env_bool("AGENTMEMOS_API_WORKER_ENABLED", True),
         job_max_attempts=int(os.getenv("AGENTMEMOS_JOB_MAX_ATTEMPTS", "3")),

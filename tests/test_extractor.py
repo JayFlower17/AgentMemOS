@@ -1,5 +1,11 @@
 from agentmemos.enums import AgentRole, EventType, MemoryScope, MemoryType
-from agentmemos.extractor import detect_content_signals, explain_extraction, extract_memory
+from agentmemos.extractor import (
+    RuleBasedExtractor,
+    create_extractor_provider,
+    detect_content_signals,
+    explain_extraction,
+    extract_memory,
+)
 from agentmemos.models import AgentEventModel
 
 
@@ -77,3 +83,38 @@ def test_content_signal_detection_supports_chinese_project_notes():
     assert signals["procedure_signal"] is True
     assert signals["risk_signal"] is True
     assert signals["failure_signal"] is True
+
+
+def test_rule_based_extractor_returns_structured_result():
+    event = make_event(
+        EventType.review_finding_created,
+        AgentRole.reviewer,
+        "The reviewer found that retries need bounded backoff before approval.",
+    )
+
+    result = RuleBasedExtractor().extract(event)
+
+    assert result.should_write is True
+    assert result.memory is not None
+    assert result.memory.memory_type == MemoryType.episodic
+    assert result.reason.startswith("Review findings")
+    assert result.provider == "rule"
+    assert result.signals["extractor"] == "structured-rule-v2"
+    assert "event:review_finding" in result.signals["applied_rules"]
+
+
+def test_rule_based_extractor_skips_empty_content_with_auditable_reason():
+    event = make_event(EventType.agent_message_sent, AgentRole.coder, "   ")
+
+    result = RuleBasedExtractor().extract(event)
+
+    assert result.should_write is False
+    assert result.memory is None
+    assert "Empty event content" in result.reason
+    assert "content:empty" in result.signals["applied_rules"]
+
+
+def test_extractor_provider_factory_defaults_to_rule_backend():
+    provider = create_extractor_provider()
+
+    assert isinstance(provider, RuleBasedExtractor)

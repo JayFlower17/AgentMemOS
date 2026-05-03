@@ -704,6 +704,37 @@ Verification:
 - `python -m compileall -q agentmemos examples`: passed.
 - `pytest -q`: 79 passed.
 
+### Refactor extractor into provider boundary
+
+- Added structured `ExtractionResult` with:
+  - `should_write`
+  - `memory`
+  - `reason`
+  - `signals`
+  - `provider`
+- Added `ExtractorProvider` protocol.
+- Wrapped the existing rule-based logic in `RuleBasedExtractor`.
+- Added `create_extractor_provider()` factory.
+- Added `AGENTMEMOS_EXTRACTOR_BACKEND`, defaulting to `rule`.
+- Preserved legacy compatibility functions:
+  - `extract_memory(event)`
+  - `explain_extraction(event, memory)`
+- Updated `MemoryWorker` to accept an injected extractor provider.
+- Kept current rule-based behavior and decision traces stable.
+- Updated README with extractor provider explanation.
+- Added tests for:
+  - structured rule-based extraction results
+  - empty-content skip decisions
+  - provider factory
+  - worker extractor injection
+
+Verification:
+
+- `python -m py_compile agentmemos/extractor.py agentmemos/worker.py agentmemos/config.py`: passed.
+- `pytest -q tests/test_extractor.py tests/test_queue.py`: 24 passed.
+- `python -m compileall -q agentmemos examples`: passed.
+- `pytest -q`: 83 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -741,12 +772,13 @@ Verification:
 - SSE realtime event stream for memory, job, and governance activity.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
+- Extractor provider boundary with rule-based default and structured extraction results.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
 - GitHub Actions CI for compile checks and full test suite on Python 3.11 and 3.12.
 
 ## Known Gaps
 
-- Extraction is now structured and auditable, but still rule-based; LLM-assisted extraction is pending.
+- Extraction is provider-based and auditable, but only the rule-based provider exists; LLM-assisted extraction is pending.
 - Relation suggestions and retrieval still use lexical heuristics by default; vector-assisted retrieval can use memory, SQLite, or optional pgvector storage.
 - Governance, extraction, and embedding indexing use a typed job queue; Redis adapter supports status counters and dead letters, with Docker Compose available for local validation.
 - SQLite remains the default local store behind thin repositories; pgvector exists for vector indexes, while full Postgres primary persistence is still pending.
@@ -760,7 +792,7 @@ Verification:
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Improve extractor beyond rule-based MVP with an optional LLM extractor boundary.
+1. Add optional LLM-assisted extractor provider.
 2. Add optional external embedding provider.
 3. Validate MCP configuration inside specific external client UIs when needed.
 4. Add authentication and tenant boundaries before any shared deployment.
