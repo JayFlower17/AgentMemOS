@@ -547,6 +547,28 @@ Verification:
 - `python -m py_compile agentmemos/queue.py agentmemos/worker.py agentmemos/worker_app.py agentmemos/main.py agentmemos/services.py agentmemos/config.py agentmemos/schemas.py`: passed.
 - `pytest -q`: 73 passed.
 
+### Add Redis local validation compose and smoke test
+
+- Added `docker-compose.redis.yml` for one-command local Redis startup.
+- Redis compose uses `redis:7-alpine`, exposes `6379`, persists data to a named Docker volume, and includes a healthcheck.
+- Added `examples/redis_queue_smoke_test.py` to verify:
+  - API can connect to a Redis-backed queue.
+  - Event ingestion enqueues extraction work.
+  - An external worker consumes the job and creates memory.
+  - `/queue/status` remains available before and after the flow.
+- Updated README with:
+  - Docker Compose Redis startup.
+  - API-only mode.
+  - independent worker startup.
+  - Redis queue smoke test.
+  - Redis shutdown command.
+
+Verification:
+
+- `python -m py_compile examples/redis_queue_smoke_test.py`: passed.
+- `pytest -q`: 73 passed.
+- `docker compose -f docker-compose.redis.yml config`: passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -574,6 +596,7 @@ Verification:
 - Optional vector-assisted retrieval behind disabled-by-default configuration.
 - Optional Redis-backed `JobQueue` adapter with in-memory default preserved.
 - Redis queue operationalization with status counters, dead-letter tracking, retry/backoff, and independent worker entrypoint.
+- Redis local validation compose and smoke test for API plus independent worker flow.
 - Durable SQLite vector store option with in-memory default preserved.
 - Expanded Python SDK client for external agent and adapter integration.
 - LangGraph-style adapter for graph/node state workflows.
@@ -587,7 +610,7 @@ Verification:
 
 - Extraction is now structured and auditable, but still rule-based; LLM-assisted extraction is pending.
 - Relation suggestions and retrieval still use lexical heuristics by default; vector-assisted retrieval can be enabled locally but is not backed by pgvector yet.
-- Governance, extraction, and embedding indexing use a typed job queue; Redis adapter supports status counters and dead letters, but local development still defaults to in-memory.
+- Governance, extraction, and embedding indexing use a typed job queue; Redis adapter supports status counters and dead letters, with Docker Compose available for local validation.
 - SQLite remains the default local store behind thin repositories; local durable vector storage exists, while Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
@@ -599,10 +622,10 @@ Verification:
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add Redis smoke test docs or docker compose for local Redis validation.
-2. Prepare pgvector storage for shared production vector indexes.
-3. Add Redis pub/sub or equivalent fanout for multi-process SSE.
-4. Validate MCP configuration inside specific external client UIs when needed.
+1. Prepare pgvector storage for shared production vector indexes.
+2. Add Redis pub/sub or equivalent fanout for multi-process SSE.
+3. Validate MCP configuration inside specific external client UIs when needed.
+4. Add CI workflow once the local MVP stabilizes further.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 

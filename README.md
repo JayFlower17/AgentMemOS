@@ -201,6 +201,13 @@ The stream emits events such as:
 ## Queue And Worker Operations
 
 Local development still defaults to an in-process memory queue and an API-owned worker.
+Start Redis locally with Docker Compose:
+
+```powershell
+docker compose -f docker-compose.redis.yml up -d
+docker compose -f docker-compose.redis.yml ps
+```
+
 For Redis-backed queue operation:
 
 ```powershell
@@ -222,8 +229,10 @@ In another terminal:
 
 ```powershell
 $env:AGENTMEMOS_JOB_QUEUE_BACKEND="redis"
-agentmemos-worker
+python -m agentmemos.worker_app
 ```
+
+If AgentMemOS is installed as a package, use `agentmemos-worker` instead.
 
 Retry behavior is configurable:
 
@@ -236,6 +245,18 @@ Inspect queue status:
 
 ```text
 GET /queue/status
+```
+
+Run a Redis queue smoke test after starting Redis, the API, and one worker:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/redis_queue_smoke_test.py
+```
+
+Stop Redis when finished:
+
+```powershell
+docker compose -f docker-compose.redis.yml down
 ```
 
 ## Core Endpoints
