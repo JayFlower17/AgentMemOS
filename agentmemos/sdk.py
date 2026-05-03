@@ -27,6 +27,12 @@ class AgentMemOSClient:
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/health")
 
+    def list_events(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        result = self._request("GET", f"/events?{urlencode({'limit': limit})}")
+        if not isinstance(result, list):
+            raise AgentMemOSError("Expected /events to return a list")
+        return result
+
     def emit_event(
         self,
         *,
@@ -129,6 +135,12 @@ class AgentMemOSClient:
     def get_trace(self, trace_id: str) -> dict[str, Any]:
         return self._request("GET", f"/traces/{trace_id}")
 
+    def list_traces(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        result = self._request("GET", f"/traces?{urlencode({'limit': limit})}")
+        if not isinstance(result, list):
+            raise AgentMemOSError("Expected /traces to return a list")
+        return result
+
     def get_memory(self, memory_id: str) -> dict[str, Any]:
         return self._request("GET", f"/memories/{memory_id}")
 
@@ -171,6 +183,115 @@ class AgentMemOSClient:
         result = self._request("GET", f"/memories{suffix}")
         if not isinstance(result, list):
             raise AgentMemOSError("Expected /memories to return a list")
+        return result
+
+    def create_memory_relation(
+        self,
+        *,
+        source_memory_id: str,
+        target_memory_id: str,
+        relation_type: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/memory-relations",
+            {
+                "source_memory_id": source_memory_id,
+                "target_memory_id": target_memory_id,
+                "relation_type": relation_type,
+                "reason": reason,
+            },
+        )
+
+    def list_memory_relations(
+        self,
+        *,
+        memory_id: str | None = None,
+        status_filter: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        if memory_id:
+            path = f"/memories/{memory_id}/relations"
+        else:
+            params = {"status_filter": status_filter, "limit": limit}
+            query = urlencode({key: value for key, value in params.items() if value is not None})
+            path = f"/memory-relations?{query}"
+        result = self._request("GET", path)
+        if not isinstance(result, list):
+            raise AgentMemOSError("Expected memory relations endpoint to return a list")
+        return result
+
+    def resolve_memory_relation(self, relation_id: str, *, reason: str = "Relation has been reviewed.") -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/memory-relations/{relation_id}/resolve",
+            {"reason": reason},
+        )
+
+    def list_memory_insights(
+        self,
+        *,
+        task_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        params = {"task_id": task_id, "limit": limit}
+        query = urlencode({key: value for key, value in params.items() if value is not None})
+        result = self._request("GET", f"/memory-insights?{query}")
+        if not isinstance(result, list):
+            raise AgentMemOSError("Expected /memory-insights to return a list")
+        return result
+
+    def list_relation_suggestions(
+        self,
+        *,
+        task_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        params = {"task_id": task_id, "limit": limit}
+        query = urlencode({key: value for key, value in params.items() if value is not None})
+        result = self._request("GET", f"/memory-relation-suggestions?{query}")
+        if not isinstance(result, list):
+            raise AgentMemOSError("Expected /memory-relation-suggestions to return a list")
+        return result
+
+    def accept_relation_suggestion(
+        self,
+        suggestion_id: str,
+        *,
+        actor: str = "system",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/memory-relation-suggestions/{suggestion_id}/accept",
+            {"actor": actor, "reason": reason},
+        )
+
+    def run_governance(
+        self,
+        *,
+        actor: str = "governance_agent",
+        duplicate_confidence_threshold: float = 0.85,
+        max_accepts: int = 10,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/governance/run",
+            {
+                "actor": actor,
+                "duplicate_confidence_threshold": duplicate_confidence_threshold,
+                "max_accepts": max_accepts,
+            },
+        )
+
+    def get_governance_scheduler(self) -> dict[str, Any]:
+        return self._request("GET", "/governance/scheduler")
+
+    def list_governance_actions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        result = self._request("GET", f"/memory-governance-actions?{urlencode({'limit': limit})}")
+        if not isinstance(result, list):
+            raise AgentMemOSError("Expected /memory-governance-actions to return a list")
         return result
 
     def _request(

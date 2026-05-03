@@ -386,6 +386,27 @@ Verification:
 - `python -m py_compile agentmemos/models.py agentmemos/vector.py agentmemos/config.py agentmemos/main.py`: passed.
 - `pytest -q`: 51 passed.
 
+### Expand Python SDK client
+
+- Expanded `AgentMemOSClient` as the common SDK layer for future adapters.
+- Added SDK methods for:
+  - event listing
+  - trace listing and detail reads
+  - memory relation creation/listing/resolution
+  - memory insights
+  - relation suggestions and suggestion acceptance
+  - governance pass execution
+  - governance scheduler status
+  - governance action listing
+- Kept SDK dependency-free by using the Python standard library HTTP stack.
+- Preserved injectable transport for tests and adapter integration.
+- Updated SDK usage example to default to local port `8014` and demonstrate insights/governance calls.
+
+Verification:
+
+- `python -m py_compile agentmemos/sdk.py examples/sdk_usage.py`: passed.
+- `pytest -q`: 54 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -413,6 +434,7 @@ Verification:
 - Optional vector-assisted retrieval behind disabled-by-default configuration.
 - Optional Redis-backed `JobQueue` adapter with in-memory default preserved.
 - Durable SQLite vector store option with in-memory default preserved.
+- Expanded Python SDK client for external agent and adapter integration.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -425,13 +447,13 @@ Verification:
 - SQLite remains the default local store behind thin repositories; local durable vector storage exists, while Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
-- SDK and external agent-framework adapters are still minimal.
+- SDK covers core APIs; external agent-framework adapters are still minimal.
 
 ## Next Recommended Step
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add SDK or agent-framework adapters on top of the service layer.
+1. Add a LangGraph-style adapter on top of the SDK.
 2. Prepare pgvector storage for shared production vector indexes.
 3. Add SSE/MCP integration once the core service boundary settles.
 4. Add operational documentation for Redis and SQLite vector store configuration.

@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentmemos import AgentMemOSClient
 
 
-client = AgentMemOSClient(os.getenv("AGENTMEMOS_BASE_URL", "http://127.0.0.1:8000"))
+client = AgentMemOSClient(os.getenv("AGENTMEMOS_BASE_URL", "http://127.0.0.1:8014"))
 
 
 def main() -> None:
@@ -33,6 +33,12 @@ def main() -> None:
     )
     print("trace:", result["trace_id"])
     print(result["packed_context"])
+
+    insights = client.list_memory_insights(task_id="task_sdk_demo", limit=5)
+    print("insights:", len(insights))
+
+    governance = client.run_governance(actor="sdk_demo", max_accepts=1)
+    print("governance accepted:", governance["accepted_suggestions"])
 
 
 if __name__ == "__main__":
