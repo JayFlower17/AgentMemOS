@@ -64,6 +64,7 @@ from agentmemos.serializers import (
     status_decision_to_schema,
     trace_to_schema,
 )
+from agentmemos.services import EventIngestionService, GovernanceRelationService, MemoryLifecycleService
 from agentmemos.worker import MemoryWorker, create_memory
 
 
@@ -101,8 +102,8 @@ def dashboard() -> FileResponse:
 
 @app.post("/events", response_model=AgentEvent, status_code=status.HTTP_202_ACCEPTED)
 async def ingest_event(request: Request, payload: AgentEventCreate, db: Session = Depends(get_db)) -> AgentEvent:
-    event = EventRepository(db).create(payload)
-    await request.app.state.memory_worker.enqueue(event.event_id)
+    service = EventIngestionService(EventRepository(db), request.app.state.memory_worker.job_queue)
+    event = await service.ingest(payload)
     return event_to_schema(event)
 
 
@@ -270,11 +271,10 @@ def retrieve(payload: RetrieveRequest, db: Session = Depends(get_db)) -> Retriev
 
 @app.post("/memories/{memory_id}/promote", response_model=MemoryRecord)
 def promote_memory(memory_id: str, payload: PromoteMemoryRequest, db: Session = Depends(get_db)) -> MemoryRecord:
-    repository = MemoryRepository(db)
-    memory = repository.get(memory_id)
+    memory = MemoryLifecycleService(MemoryRepository(db)).promote(memory_id, payload)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
-    return memory_to_schema(repository.promote(memory, payload))
+    return memory_to_schema(memory)
 
 
 @app.post("/memory-relations", response_model=MemoryRelation, status_code=status.HTTP_201_CREATED)
@@ -320,22 +320,20 @@ def resolve_memory_relation(
     payload: MemoryRelationResolveRequest,
     db: Session = Depends(get_db),
 ) -> MemoryRelation:
-    repository = GovernanceRepository(db)
-    relation = repository.get_relation(relation_id)
+    relation = GovernanceRelationService(GovernanceRepository(db)).resolve_relation(relation_id, payload)
     if relation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Relation not found")
-    return memory_relation_to_schema(repository.resolve_relation(relation, payload.reason))
+    return memory_relation_to_schema(relation)
 
 
 @app.post("/memories/{memory_id}/status", response_model=MemoryRecord)
 def update_memory_status(
     memory_id: str, payload: UpdateMemoryStatusRequest, db: Session = Depends(get_db)
 ) -> MemoryRecord:
-    repository = MemoryRepository(db)
-    memory = repository.get(memory_id)
+    memory = MemoryLifecycleService(MemoryRepository(db)).update_status(memory_id, payload)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
-    return memory_to_schema(repository.update_status(memory, payload))
+    return memory_to_schema(memory)
 
 
 @app.get("/traces/{trace_id}", response_model=RetrievalTrace)

@@ -284,6 +284,24 @@ Verification:
 - `python -m py_compile agentmemos/repositories.py agentmemos/main.py`: passed.
 - `pytest -q`: 33 passed.
 
+### Add service orchestration layer
+
+- Added `agentmemos/services.py`.
+- Introduced service-layer orchestration:
+  - `EventIngestionService`
+  - `MemoryLifecycleService`
+  - `GovernanceRelationService`
+- Event ingestion now creates the event through `EventRepository` and enqueues an `extract_memory` job through `JobQueue`.
+- Memory promotion and status updates now flow through `MemoryLifecycleService`.
+- Relation resolution now flows through `GovernanceRelationService`.
+- API routes remain behavior-compatible but now act more like HTTP adapters.
+- Added service tests for event ingestion/job enqueue, memory lifecycle, and relation resolution.
+
+Verification:
+
+- `python -m py_compile agentmemos/services.py agentmemos/main.py`: passed.
+- `pytest -q`: 36 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -305,6 +323,7 @@ Verification:
 - Typed in-process job queue boundary for extraction and governance jobs.
 - Dedicated governance service module.
 - Repository boundary for event, memory, trace, and governance persistence access.
+- Service-layer orchestration for event ingestion, memory lifecycle, and relation resolution.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -317,16 +336,16 @@ Verification:
 - SQLite remains the default local store behind thin repositories; Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
-- SDK and adapters are still minimal.
+- SDK and external agent-framework adapters are still minimal.
 
 ## Next Recommended Step
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Extract service-layer orchestration around event ingestion and memory lifecycle operations.
+1. Prepare embedding/vector retrieval boundaries without replacing current lexical retrieval.
 2. Keep SQLite repositories and in-process workers as the default implementation.
 3. Add optional Redis queue implementation behind the existing `JobQueue` interface.
-4. Prepare embedding/vector retrieval boundaries without replacing current lexical retrieval.
+4. Add SDK or agent-framework adapters on top of the service layer.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 
