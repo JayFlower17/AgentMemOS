@@ -20,16 +20,12 @@ from agentmemos.governance import (
 from agentmemos.jobs import GovernanceScheduler
 from agentmemos.models import (
     AgentEventModel,
-    MemoryDecisionTraceModel,
-    MemoryGovernanceActionModel,
     MemoryRelationModel,
     MemoryRecordModel,
-    MemoryStatusDecisionModel,
     PromotionDecisionModel,
     RetrievalTraceModel,
-    new_id,
-    utcnow,
 )
+from agentmemos.repositories import EventRepository, GovernanceRepository, MemoryRepository, TraceRepository
 from agentmemos.retrieval import pack_context, retrieve_memories
 from agentmemos.schemas import (
     AcceptMemoryRelationSuggestionRequest,
@@ -105,19 +101,7 @@ def dashboard() -> FileResponse:
 
 @app.post("/events", response_model=AgentEvent, status_code=status.HTTP_202_ACCEPTED)
 async def ingest_event(request: Request, payload: AgentEventCreate, db: Session = Depends(get_db)) -> AgentEvent:
-    event = AgentEventModel(
-        event_id=payload.event_id or new_id("evt"),
-        event_type=payload.event_type,
-        task_id=payload.task_id,
-        agent_id=payload.agent_id,
-        agent_role=payload.agent_role,
-        content=payload.content,
-        event_metadata=payload.metadata,
-        created_at=payload.created_at,
-    )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
+    event = EventRepository(db).create(payload)
     await request.app.state.memory_worker.enqueue(event.event_id)
     return event_to_schema(event)
 
@@ -129,8 +113,7 @@ def create_memory_endpoint(payload: MemoryCreate, db: Session = Depends(get_db))
 
 @app.get("/events", response_model=list[AgentEvent])
 def list_events(limit: int = 50, db: Session = Depends(get_db)) -> list[AgentEvent]:
-    stmt = select(AgentEventModel).order_by(AgentEventModel.created_at.desc()).limit(min(limit, 200))
-    return [event_to_schema(event) for event in db.scalars(stmt)]
+    return [event_to_schema(event) for event in EventRepository(db).list_recent(limit=limit)]
 
 
 @app.get("/memories", response_model=list[MemoryRecord])
@@ -141,19 +124,13 @@ def list_memories(
     limit: int = 100,
     db: Session = Depends(get_db),
 ) -> list[MemoryRecord]:
-    stmt = select(MemoryRecordModel).order_by(MemoryRecordModel.created_at.desc()).limit(min(limit, 300))
-    if task_id:
-        stmt = stmt.where(MemoryRecordModel.task_id == task_id)
-    if scope:
-        stmt = stmt.where(MemoryRecordModel.scope == scope)
-    if memory_type:
-        stmt = stmt.where(MemoryRecordModel.memory_type == memory_type)
-    return [memory_to_schema(memory) for memory in db.scalars(stmt)]
+    memories = MemoryRepository(db).list_recent(task_id=task_id, scope=scope, memory_type=memory_type, limit=limit)
+    return [memory_to_schema(memory) for memory in memories]
 
 
 @app.get("/memories/{memory_id}", response_model=MemoryRecord)
 def get_memory(memory_id: str, db: Session = Depends(get_db)) -> MemoryRecord:
-    memory = db.get(MemoryRecordModel, memory_id)
+    memory = MemoryRepository(db).get(memory_id)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
     return memory_to_schema(memory)
@@ -161,59 +138,44 @@ def get_memory(memory_id: str, db: Session = Depends(get_db)) -> MemoryRecord:
 
 @app.get("/memories/{memory_id}/decisions", response_model=list[MemoryDecisionTrace])
 def list_memory_decisions(memory_id: str, db: Session = Depends(get_db)) -> list[MemoryDecisionTrace]:
-    memory = db.get(MemoryRecordModel, memory_id)
+    repository = MemoryRepository(db)
+    memory = repository.get(memory_id)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
-    stmt = (
-        select(MemoryDecisionTraceModel)
-        .where(MemoryDecisionTraceModel.memory_id == memory_id)
-        .order_by(MemoryDecisionTraceModel.created_at.desc())
-    )
-    return [memory_decision_to_schema(decision) for decision in db.scalars(stmt)]
+    return [memory_decision_to_schema(decision) for decision in repository.list_decisions_for_memory(memory_id)]
 
 
 @app.get("/memories/{memory_id}/promotions", response_model=list[PromotionDecision])
 def list_memory_promotions(memory_id: str, db: Session = Depends(get_db)) -> list[PromotionDecision]:
-    memory = db.get(MemoryRecordModel, memory_id)
+    repository = MemoryRepository(db)
+    memory = repository.get(memory_id)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
-    stmt = (
-        select(PromotionDecisionModel)
-        .where(PromotionDecisionModel.memory_id == memory_id)
-        .order_by(PromotionDecisionModel.created_at.desc())
-    )
-    return [promotion_to_schema(decision) for decision in db.scalars(stmt)]
+    return [promotion_to_schema(decision) for decision in repository.list_promotions_for_memory(memory_id)]
 
 
 @app.get("/memories/{memory_id}/status-decisions", response_model=list[MemoryStatusDecision])
 def list_memory_status_decisions(memory_id: str, db: Session = Depends(get_db)) -> list[MemoryStatusDecision]:
-    memory = db.get(MemoryRecordModel, memory_id)
+    repository = MemoryRepository(db)
+    memory = repository.get(memory_id)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
-    stmt = (
-        select(MemoryStatusDecisionModel)
-        .where(MemoryStatusDecisionModel.memory_id == memory_id)
-        .order_by(MemoryStatusDecisionModel.created_at.desc())
-    )
-    return [status_decision_to_schema(decision) for decision in db.scalars(stmt)]
+    return [status_decision_to_schema(decision) for decision in repository.list_status_decisions_for_memory(memory_id)]
 
 
 @app.get("/memory-decisions", response_model=list[MemoryDecisionTrace])
 def list_memory_decision_traces(limit: int = 50, db: Session = Depends(get_db)) -> list[MemoryDecisionTrace]:
-    stmt = select(MemoryDecisionTraceModel).order_by(MemoryDecisionTraceModel.created_at.desc()).limit(min(limit, 200))
-    return [memory_decision_to_schema(decision) for decision in db.scalars(stmt)]
+    return [memory_decision_to_schema(decision) for decision in MemoryRepository(db).list_recent_decisions(limit=limit)]
 
 
 @app.get("/promotions", response_model=list[PromotionDecision])
 def list_promotions(limit: int = 50, db: Session = Depends(get_db)) -> list[PromotionDecision]:
-    stmt = select(PromotionDecisionModel).order_by(PromotionDecisionModel.created_at.desc()).limit(min(limit, 200))
-    return [promotion_to_schema(decision) for decision in db.scalars(stmt)]
+    return [promotion_to_schema(decision) for decision in MemoryRepository(db).list_recent_promotions(limit=limit)]
 
 
 @app.get("/traces", response_model=list[RetrievalTrace])
 def list_traces(limit: int = 50, db: Session = Depends(get_db)) -> list[RetrievalTrace]:
-    stmt = select(RetrievalTraceModel).order_by(RetrievalTraceModel.created_at.desc()).limit(min(limit, 200))
-    return [trace_to_schema(trace) for trace in db.scalars(stmt)]
+    return [trace_to_schema(trace) for trace in TraceRepository(db).list_recent(limit=limit)]
 
 
 @app.get("/memory-relation-suggestions", response_model=list[MemoryRelationSuggestion])
@@ -254,12 +216,10 @@ def get_governance_scheduler_status(request: Request) -> GovernanceSchedulerStat
 
 @app.get("/memory-governance-actions", response_model=list[MemoryGovernanceAction])
 def list_memory_governance_actions(limit: int = 50, db: Session = Depends(get_db)) -> list[MemoryGovernanceAction]:
-    stmt = (
-        select(MemoryGovernanceActionModel)
-        .order_by(MemoryGovernanceActionModel.created_at.desc())
-        .limit(min(limit, 200))
-    )
-    return [memory_governance_action_to_schema(action) for action in db.scalars(stmt)]
+    return [
+        memory_governance_action_to_schema(action)
+        for action in GovernanceRepository(db).list_recent_actions(limit=limit)
+    ]
 
 
 @app.get("/memory-insights", response_model=list[MemoryInsight])
@@ -310,20 +270,11 @@ def retrieve(payload: RetrieveRequest, db: Session = Depends(get_db)) -> Retriev
 
 @app.post("/memories/{memory_id}/promote", response_model=MemoryRecord)
 def promote_memory(memory_id: str, payload: PromoteMemoryRequest, db: Session = Depends(get_db)) -> MemoryRecord:
-    memory = db.get(MemoryRecordModel, memory_id)
+    repository = MemoryRepository(db)
+    memory = repository.get(memory_id)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
-    decision = PromotionDecisionModel(
-        memory_id=memory.memory_id,
-        from_scope=memory.scope,
-        to_scope=payload.to_scope,
-        reason=payload.reason,
-    )
-    memory.scope = payload.to_scope
-    db.add(decision)
-    db.commit()
-    db.refresh(memory)
-    return memory_to_schema(memory)
+    return memory_to_schema(repository.promote(memory, payload))
 
 
 @app.post("/memory-relations", response_model=MemoryRelation, status_code=status.HTTP_201_CREATED)
@@ -348,26 +299,19 @@ def list_memory_relations(
     limit: int = 50,
     db: Session = Depends(get_db),
 ) -> list[MemoryRelation]:
-    stmt = select(MemoryRelationModel).order_by(MemoryRelationModel.created_at.desc()).limit(min(limit, 200))
-    if status_filter:
-        stmt = stmt.where(MemoryRelationModel.status == status_filter)
-    return [memory_relation_to_schema(relation) for relation in db.scalars(stmt)]
+    relations = GovernanceRepository(db).list_recent_relations(status_filter=status_filter, limit=limit)
+    return [memory_relation_to_schema(relation) for relation in relations]
 
 
 @app.get("/memories/{memory_id}/relations", response_model=list[MemoryRelation])
 def list_memory_relations_for_memory(memory_id: str, db: Session = Depends(get_db)) -> list[MemoryRelation]:
-    memory = db.get(MemoryRecordModel, memory_id)
+    memory = MemoryRepository(db).get(memory_id)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
-    stmt = (
-        select(MemoryRelationModel)
-        .where(
-            (MemoryRelationModel.source_memory_id == memory_id)
-            | (MemoryRelationModel.target_memory_id == memory_id)
-        )
-        .order_by(MemoryRelationModel.created_at.desc())
-    )
-    return [memory_relation_to_schema(relation) for relation in db.scalars(stmt)]
+    return [
+        memory_relation_to_schema(relation)
+        for relation in GovernanceRepository(db).list_relations_for_memory(memory_id)
+    ]
 
 
 @app.post("/memory-relations/{relation_id}/resolve", response_model=MemoryRelation)
@@ -376,40 +320,27 @@ def resolve_memory_relation(
     payload: MemoryRelationResolveRequest,
     db: Session = Depends(get_db),
 ) -> MemoryRelation:
-    relation = db.get(MemoryRelationModel, relation_id)
+    repository = GovernanceRepository(db)
+    relation = repository.get_relation(relation_id)
     if relation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Relation not found")
-    relation.status = "resolved"
-    relation.reason = f"{relation.reason}\nResolution: {payload.reason}"
-    relation.resolved_at = utcnow()
-    db.commit()
-    db.refresh(relation)
-    return memory_relation_to_schema(relation)
+    return memory_relation_to_schema(repository.resolve_relation(relation, payload.reason))
 
 
 @app.post("/memories/{memory_id}/status", response_model=MemoryRecord)
 def update_memory_status(
     memory_id: str, payload: UpdateMemoryStatusRequest, db: Session = Depends(get_db)
 ) -> MemoryRecord:
-    memory = db.get(MemoryRecordModel, memory_id)
+    repository = MemoryRepository(db)
+    memory = repository.get(memory_id)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
-    decision = MemoryStatusDecisionModel(
-        memory_id=memory.memory_id,
-        from_status=memory.status,
-        to_status=payload.status,
-        reason=payload.reason,
-    )
-    memory.status = payload.status
-    db.add(decision)
-    db.commit()
-    db.refresh(memory)
-    return memory_to_schema(memory)
+    return memory_to_schema(repository.update_status(memory, payload))
 
 
 @app.get("/traces/{trace_id}", response_model=RetrievalTrace)
 def get_trace(trace_id: str, db: Session = Depends(get_db)) -> RetrievalTrace:
-    trace = db.get(RetrievalTraceModel, trace_id)
+    trace = TraceRepository(db).get(trace_id)
     if trace is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trace not found")
     return trace_to_schema(trace)

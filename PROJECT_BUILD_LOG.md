@@ -267,6 +267,23 @@ Verification:
 - `python -m py_compile agentmemos/queue.py agentmemos/worker.py agentmemos/jobs.py agentmemos/main.py`: passed.
 - `pytest -q`: 30 passed.
 
+### Add repository boundary
+
+- Added `agentmemos/repositories.py`.
+- Introduced thin SQLAlchemy-backed repositories:
+  - `EventRepository`
+  - `MemoryRepository`
+  - `TraceRepository`
+  - `GovernanceRepository`
+- Moved core API persistence access for events, memory listing/details, memory decisions, promotions, status history, traces, relations, and governance actions behind repository methods.
+- Kept repositories returning SQLAlchemy models for now to preserve existing serializers and endpoint behavior.
+- Added repository tests for event creation/listing, memory lifecycle history, and relation lookup/resolution.
+
+Verification:
+
+- `python -m py_compile agentmemos/repositories.py agentmemos/main.py`: passed.
+- `pytest -q`: 33 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -287,6 +304,7 @@ Verification:
 - Optional background governance scheduler.
 - Typed in-process job queue boundary for extraction and governance jobs.
 - Dedicated governance service module.
+- Repository boundary for event, memory, trace, and governance persistence access.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -296,7 +314,7 @@ Verification:
 - Extraction is now structured and auditable, but still rule-based; LLM/embedding-assisted extraction is pending.
 - Relation suggestions use lexical heuristics, not embeddings or LLM judgment.
 - Governance and extraction now use a typed in-process job queue boundary, but no Redis/distributed queue implementation yet.
-- SQLite remains the default local store; Postgres/pgvector integration is still pending for production-like deployments.
+- SQLite remains the default local store behind thin repositories; Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
 - SDK and adapters are still minimal.
@@ -305,10 +323,10 @@ Verification:
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Define repository interfaces for memory, event, trace, relation, and governance action persistence.
-2. Keep SQLite as the default repository implementation.
+1. Extract service-layer orchestration around event ingestion and memory lifecycle operations.
+2. Keep SQLite repositories and in-process workers as the default implementation.
 3. Add optional Redis queue implementation behind the existing `JobQueue` interface.
-4. Keep conflict resolution explicit and auditable.
+4. Prepare embedding/vector retrieval boundaries without replacing current lexical retrieval.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 
