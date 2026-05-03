@@ -655,6 +655,33 @@ Verification:
 - `docker compose -f docker-compose.pgvector.yml config`: passed.
 - `pytest -q`: 76 passed.
 
+### Run real pgvector E2E smoke test
+
+- Started a real pgvector container from `docker-compose.pgvector.yml`.
+- Installed the optional local `psycopg[binary]` dependency for the smoke test environment.
+- Added `examples/pgvector_e2e_smoke.py` to avoid fragile shell environment quoting on Windows.
+- The E2E smoke runner:
+  - starts AgentMemOS API with `AGENTMEMOS_VECTOR_STORE_BACKEND=pgvector`
+  - enables vector-assisted retrieval
+  - creates a memory through the API
+  - waits for the API-owned worker to index the embedding into pgvector
+  - retrieves using a related query
+  - verifies the retrieval trace includes positive embedding score contribution
+  - terminates the child API process cleanly
+- Updated README with the pgvector E2E runner.
+
+Verification:
+
+- `docker compose -f docker-compose.pgvector.yml up -d`: passed; pgvector container became healthy.
+- `docker exec agentmemos-pgvector pg_isready -U agentmemos -d agentmemos`: passed.
+- `pip install "psycopg[binary]>=3"`: installed pgvector client dependency for the local smoke environment.
+- `python -m py_compile examples/pgvector_e2e_smoke.py examples/pgvector_smoke_test.py`: passed.
+- `python examples/pgvector_e2e_smoke.py`: passed.
+  - Created memory: `mem_024265d2744645cb`.
+  - Retrieval trace: `trace_ac7de5375feb49b3`.
+  - Embedding score contribution: `0.0603`.
+- `pytest -q`: 79 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.

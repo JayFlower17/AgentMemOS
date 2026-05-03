@@ -301,6 +301,12 @@ Run a pgvector smoke test:
 $env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/pgvector_smoke_test.py
 ```
 
+Or run the full local E2E smoke test, which starts an API process with pgvector enabled:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/pgvector_e2e_smoke.py
+```
+
 Stop pgvector when finished:
 
 ```powershell
