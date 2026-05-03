@@ -7,12 +7,14 @@ from agentmemos.config import Settings, get_settings
 from agentmemos.database import SessionLocal
 from agentmemos.governance import run_governance
 from agentmemos.models import utcnow
+from agentmemos.queue import JobQueue, MemoryJob
 from agentmemos.schemas import RunGovernanceRequest
 
 
 class GovernanceScheduler:
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(self, settings: Settings | None = None, job_queue: JobQueue | None = None) -> None:
         self.settings = settings or get_settings()
+        self.job_queue = job_queue
         self._task: asyncio.Task | None = None
         self._running = False
         self.last_run_at: datetime | None = None
@@ -55,6 +57,26 @@ class GovernanceScheduler:
                 duplicate_confidence_threshold=self.settings.governance_duplicate_confidence_threshold,
                 max_accepts=self.settings.governance_max_accepts,
             )
+            if self.job_queue is not None:
+                asyncio.run(
+                    self.job_queue.enqueue(
+                        MemoryJob.governance_pass(
+                            actor=payload.actor,
+                            duplicate_confidence_threshold=payload.duplicate_confidence_threshold,
+                            max_accepts=payload.max_accepts,
+                        )
+                    )
+                )
+                self.last_run_at = utcnow()
+                self.last_error = None
+                self.last_summary = {
+                    "status": "enqueued",
+                    "job_type": "governance_pass",
+                    "actor": payload.actor,
+                    "duplicate_confidence_threshold": payload.duplicate_confidence_threshold,
+                    "max_accepts": payload.max_accepts,
+                }
+                return
             with SessionLocal() as db:
                 summary = run_governance(db, payload)
             self.last_run_at = utcnow()

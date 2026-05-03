@@ -52,10 +52,10 @@ def test_event_to_retrieval_trace_flow():
         decisions_response = client.get(f"/memories/{memory_id}/decisions")
         assert decisions_response.status_code == 200
         decisions = decisions_response.json()
-        assert decisions[0]["decision_type"] == "extracted"
-        assert decisions[0]["source_event_id"] == source_event_id
-        assert decisions[0]["chosen_scope"] == "team-shared"
-        assert "Review findings" in decisions[0]["reason"]
+        extracted_decision = next(decision for decision in decisions if decision["decision_type"] == "extracted")
+        assert extracted_decision["source_event_id"] == source_event_id
+        assert extracted_decision["chosen_scope"] == "team-shared"
+        assert "Review findings" in extracted_decision["reason"]
 
 
 def test_agent_local_memory_is_hidden_from_other_agents():

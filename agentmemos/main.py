@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
     init_db()
     worker = MemoryWorker()
     await worker.start()
-    governance_scheduler = GovernanceScheduler()
+    governance_scheduler = GovernanceScheduler(job_queue=worker.job_queue)
     await governance_scheduler.start()
     app.state.memory_worker = worker
     app.state.governance_scheduler = governance_scheduler

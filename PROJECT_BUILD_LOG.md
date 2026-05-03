@@ -248,6 +248,25 @@ Verification:
 - `python -m py_compile agentmemos/jobs.py agentmemos/main.py agentmemos/config.py agentmemos/schemas.py`: passed.
 - `pytest -q`: 26 passed.
 
+### Add JobQueue boundary
+
+- Added `agentmemos/queue.py`.
+- Introduced typed jobs:
+  - `extract_memory`
+  - `governance_pass`
+- Added `MemoryJob`, `JobType`, `JobQueue`, and `InMemoryJobQueue`.
+- Refactored `MemoryWorker` to consume typed jobs instead of raw event IDs.
+- Kept `MemoryWorker.enqueue(event_id)` for backward-compatible event ingestion.
+- Governance scheduler can now enqueue governance pass jobs when connected to a queue.
+- FastAPI lifespan now wires the scheduler to the worker's queue.
+- Added queue and worker job tests.
+- Adjusted memory flow test to tolerate asynchronous duplicate audit ordering.
+
+Verification:
+
+- `python -m py_compile agentmemos/queue.py agentmemos/worker.py agentmemos/jobs.py agentmemos/main.py`: passed.
+- `pytest -q`: 30 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -266,6 +285,7 @@ Verification:
 - Conservative governance agent example.
 - Server-side governance pass endpoint.
 - Optional background governance scheduler.
+- Typed in-process job queue boundary for extraction and governance jobs.
 - Dedicated governance service module.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
@@ -275,7 +295,7 @@ Verification:
 
 - Extraction is now structured and auditable, but still rule-based; LLM/embedding-assisted extraction is pending.
 - Relation suggestions use lexical heuristics, not embeddings or LLM judgment.
-- Governance has a lightweight in-process scheduler, but no persistent/distributed job queue yet.
+- Governance and extraction now use a typed in-process job queue boundary, but no Redis/distributed queue implementation yet.
 - SQLite remains the default local store; Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
@@ -286,8 +306,8 @@ Verification:
 Draft the persistence and queue boundaries before swapping infrastructure:
 
 1. Define repository interfaces for memory, event, trace, relation, and governance action persistence.
-2. Define a queue/job abstraction for extraction and governance jobs.
-3. Keep SQLite/in-process workers as the default implementation.
+2. Keep SQLite as the default repository implementation.
+3. Add optional Redis queue implementation behind the existing `JobQueue` interface.
 4. Keep conflict resolution explicit and auditable.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:

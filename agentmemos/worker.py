@@ -7,12 +7,15 @@ from sqlalchemy import select
 from agentmemos.config import get_settings
 from agentmemos.database import SessionLocal
 from agentmemos.extractor import explain_extraction, extract_memory
+from agentmemos.governance import run_governance
 from agentmemos.models import AgentEventModel, MemoryDecisionTraceModel, MemoryRecordModel
+from agentmemos.queue import InMemoryJobQueue, JobQueue, JobType, MemoryJob
+from agentmemos.schemas import RunGovernanceRequest
 
 
 class MemoryWorker:
-    def __init__(self) -> None:
-        self.queue: asyncio.Queue[str] = asyncio.Queue()
+    def __init__(self, job_queue: JobQueue | None = None) -> None:
+        self.job_queue = job_queue or InMemoryJobQueue()
         self._task: asyncio.Task | None = None
         self._running = False
         self.settings = get_settings()
@@ -29,20 +32,32 @@ class MemoryWorker:
                 await self._task
 
     async def enqueue(self, event_id: str) -> None:
-        await self.queue.put(event_id)
+        await self.enqueue_job(MemoryJob.extract_memory(event_id))
+
+    async def enqueue_job(self, job: MemoryJob) -> None:
+        await self.job_queue.enqueue(job)
 
     async def drain(self) -> None:
-        await self.queue.join()
+        await self.job_queue.join()
 
     async def _run(self) -> None:
         while self._running:
-            event_id = await self.queue.get()
+            job = await self.job_queue.dequeue()
             try:
-                if self.settings.extraction_delay_seconds:
-                    await asyncio.sleep(self.settings.extraction_delay_seconds)
-                await asyncio.to_thread(self._process_event, event_id)
+                await self._process_job(job)
             finally:
-                self.queue.task_done()
+                self.job_queue.task_done()
+
+    async def _process_job(self, job: MemoryJob) -> None:
+        if job.job_type == JobType.extract_memory:
+            if self.settings.extraction_delay_seconds:
+                await asyncio.sleep(self.settings.extraction_delay_seconds)
+            event_id = str(job.payload.get("event_id") or "")
+            if event_id:
+                await asyncio.to_thread(self._process_event, event_id)
+            return
+        if job.job_type == JobType.governance_pass:
+            await asyncio.to_thread(self._process_governance_pass, job)
 
     def _process_event(self, event_id: str) -> None:
         with SessionLocal() as db:
@@ -54,6 +69,15 @@ class MemoryWorker:
                 return
             reason, signals = explain_extraction(event, memory)
             create_memory(db, memory, decision_type="extracted", decision_reason=reason, decision_signals=signals)
+
+    def _process_governance_pass(self, job: MemoryJob) -> None:
+        payload = RunGovernanceRequest(
+            actor=str(job.payload.get("actor") or "governance_worker"),
+            duplicate_confidence_threshold=float(job.payload.get("duplicate_confidence_threshold") or 0.85),
+            max_accepts=int(job.payload.get("max_accepts") or 10),
+        )
+        with SessionLocal() as db:
+            run_governance(db, payload)
 
 
 def create_memory(
