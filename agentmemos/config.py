@@ -21,6 +21,8 @@ class Settings(BaseModel):
     job_retry_backoff_seconds: float = Field(default=1.0, ge=0, le=3600)
     redis_url: str = "redis://localhost:6379/0"
     redis_queue_name: str = "agentmemos:jobs"
+    redis_event_fanout_enabled: bool = False
+    redis_event_channel: str = "agentmemos:events"
     vector_retrieval_enabled: bool = False
     vector_retrieval_weight: float = Field(default=0.0, ge=0, le=1)
     vector_store_backend: str = Field(default="memory", pattern="^(memory|sqlite|pgvector)$")
@@ -46,6 +48,8 @@ def get_settings() -> Settings:
         job_retry_backoff_seconds=float(os.getenv("AGENTMEMOS_JOB_RETRY_BACKOFF_SECONDS", "1")),
         redis_url=os.getenv("AGENTMEMOS_REDIS_URL", "redis://localhost:6379/0"),
         redis_queue_name=os.getenv("AGENTMEMOS_REDIS_QUEUE_NAME", "agentmemos:jobs"),
+        redis_event_fanout_enabled=env_bool("AGENTMEMOS_REDIS_EVENT_FANOUT_ENABLED", False),
+        redis_event_channel=os.getenv("AGENTMEMOS_REDIS_EVENT_CHANNEL", "agentmemos:events"),
         vector_retrieval_enabled=env_bool("AGENTMEMOS_VECTOR_RETRIEVAL_ENABLED", False),
         vector_retrieval_weight=float(os.getenv("AGENTMEMOS_VECTOR_RETRIEVAL_WEIGHT", "0")),
         vector_store_backend=os.getenv("AGENTMEMOS_VECTOR_STORE_BACKEND", "memory"),

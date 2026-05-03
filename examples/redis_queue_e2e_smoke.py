@@ -1,8 +1,10 @@
 import os
 import subprocess
 import sys
+import socket
 import time
 from pathlib import Path
+from urllib.request import ProxyHandler, Request, build_opener
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +22,26 @@ def wait_for_health(client: AgentMemOSClient, *, timeout_seconds: float = 15.0) 
         except Exception:
             time.sleep(0.25)
     raise RuntimeError("AgentMemOS API did not become healthy in time.")
+
+
+def read_sse_replay(base_url: str, *, replay: int = 20, timeout_seconds: float = 2.0) -> str:
+    request = Request(f"{base_url.rstrip('/')}/events/stream?replay={replay}", headers={"Accept": "text/event-stream"})
+    chunks: list[str] = []
+    try:
+        opener = build_opener(ProxyHandler({}))
+        with opener.open(request, timeout=timeout_seconds) as response:
+            deadline = time.time() + timeout_seconds
+            while time.time() < deadline:
+                raw = response.readline()
+                if not raw:
+                    break
+                line = raw.decode("utf-8")
+                chunks.append(line)
+                if "memory.extracted" in line:
+                    break
+    except (TimeoutError, socket.timeout):
+        pass
+    return "".join(chunks)
 
 
 def start_process(args: list[str], *, env: dict[str, str], log_name: str) -> subprocess.Popen:
@@ -52,11 +74,13 @@ def main() -> None:
         "AGENTMEMOS_JOB_QUEUE_BACKEND": "redis",
         "AGENTMEMOS_REDIS_URL": redis_url,
         "AGENTMEMOS_API_WORKER_ENABLED": "false",
+        "AGENTMEMOS_REDIS_EVENT_FANOUT_ENABLED": "true",
     }
     worker_env = {
         **os.environ,
         "AGENTMEMOS_JOB_QUEUE_BACKEND": "redis",
         "AGENTMEMOS_REDIS_URL": redis_url,
+        "AGENTMEMOS_REDIS_EVENT_FANOUT_ENABLED": "true",
     }
 
     api = start_process(
@@ -102,10 +126,14 @@ def main() -> None:
             extracted = [memory for memory in memories if memory["source_event_id"] == event["event_id"]]
             if extracted:
                 after = client._request("GET", "/queue/status")
+                sse_replay = read_sse_replay(base_url, replay=30)
+                if "memory.extracted" not in sse_replay:
+                    raise RuntimeError(f"Expected worker memory.extracted event in SSE replay, got: {sse_replay}")
                 print("queue before:", before)
                 print("queue after:", after)
                 print("event:", event["event_id"])
                 print("memory extracted:", extracted[0]["memory_id"])
+                print("sse fanout: memory.extracted observed")
                 return
             time.sleep(0.5)
 

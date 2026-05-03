@@ -1,4 +1,4 @@
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import asyncio
 from pathlib import Path
 
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from agentmemos.config import get_settings
 from agentmemos.database import get_db, init_db
 from agentmemos.enums import MemoryStatus
-from agentmemos.event_bus import MemoryEventBus
+from agentmemos.event_bus import MemoryEventBus, RedisEventPublisher, RedisEventSubscriber
 from agentmemos.governance import (
     accept_relation_suggestion_by_id,
     create_relation_from_values,
@@ -82,8 +82,18 @@ async def lifespan(app: FastAPI):
         redis_queue_name=settings.redis_queue_name,
     )
     vector_store = create_vector_store(backend=settings.vector_store_backend)
-    event_bus = MemoryEventBus()
+    event_publisher = (
+        RedisEventPublisher(redis_url=settings.redis_url, channel=settings.redis_event_channel)
+        if settings.redis_event_fanout_enabled
+        else None
+    )
+    event_bus = MemoryEventBus(publisher=event_publisher)
     event_bus.bind_loop(asyncio.get_running_loop())
+    redis_event_listener_task = None
+    redis_event_subscriber = None
+    if settings.redis_event_fanout_enabled:
+        redis_event_subscriber = RedisEventSubscriber(redis_url=settings.redis_url, channel=settings.redis_event_channel)
+        redis_event_listener_task = asyncio.create_task(_listen_for_redis_events(event_bus, redis_event_subscriber))
     worker = MemoryWorker(job_queue=job_queue, vector_store=vector_store, event_bus=event_bus)
     if settings.api_worker_enabled:
         await worker.start()
@@ -98,6 +108,23 @@ async def lifespan(app: FastAPI):
         await governance_scheduler.stop()
         if settings.api_worker_enabled:
             await worker.stop()
+        if redis_event_listener_task is not None:
+            redis_event_listener_task.cancel()
+            if redis_event_subscriber is not None:
+                redis_event_subscriber.close()
+            with suppress(asyncio.CancelledError):
+                await redis_event_listener_task
+
+
+async def _listen_for_redis_events(event_bus: MemoryEventBus, subscriber: RedisEventSubscriber) -> None:
+    def next_event(iterator):
+        return next(iterator)
+
+    iterator = subscriber.listen()
+    while True:
+        event = await asyncio.to_thread(next_event, iterator)
+        if event.origin_id != event_bus.origin_id:
+            event_bus.deliver(event)
 
 
 settings = get_settings()

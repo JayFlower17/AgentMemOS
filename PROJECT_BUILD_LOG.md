@@ -598,6 +598,36 @@ Verification:
   - Extracted memory from independent worker: `mem_955ec718ffd34737`.
 - `pytest -q`: 76 passed.
 
+### Add Redis pub/sub backed SSE fanout
+
+- Added Redis-backed event fanout configuration:
+  - `AGENTMEMOS_REDIS_EVENT_FANOUT_ENABLED`
+  - `AGENTMEMOS_REDIS_EVENT_CHANNEL`
+- Extended `MemoryEvent` with JSON serialization and `origin_id`.
+- Added `RedisEventPublisher` and `RedisEventSubscriber`.
+- Updated `MemoryEventBus` to:
+  - publish local events to Redis when fanout is enabled
+  - deliver remote Redis events into local SSE subscribers
+  - avoid echoing same-origin events back into the API process
+- Updated FastAPI lifespan to start a Redis pub/sub listener when fanout is enabled.
+- Updated independent worker startup to publish worker events to Redis.
+- Extended Redis E2E smoke runner to enable fanout and verify worker `memory.extracted` appears in `/events/stream` replay.
+- Updated README with Redis SSE fanout configuration.
+- Added tests for event JSON roundtrip, publisher handoff, and remote event delivery without republishing.
+
+Verification:
+
+- `python -m py_compile agentmemos/event_bus.py agentmemos/main.py agentmemos/worker_app.py examples/redis_queue_e2e_smoke.py`: passed.
+- `pytest -q tests/test_event_bus.py`: 6 passed.
+- First fanout E2E run exposed local proxy interference when reading SSE through `urllib`; fixed by disabling proxies with `ProxyHandler({})`.
+- Second fanout E2E run exposed SSE long-read behavior; fixed by reading SSE lines until the target event or timeout.
+- `python examples/redis_queue_e2e_smoke.py`: passed against real Redis.
+  - `/queue/status` before: Redis backend, API worker disabled, empty queue.
+  - `/queue/status` after: `enqueued=2`, `dequeued=2`, `completed=2`, `failed=0`, `dead_lettered=0`.
+  - Independent worker extracted memory: `mem_65de217f0bfe48f4`.
+  - Redis SSE fanout verified: `memory.extracted` observed through API `/events/stream` replay.
+- `pytest -q`: 79 passed.
+
 ### Add pgvector storage adapter and local validation path
 
 - Added optional `postgres` dependency extra with `psycopg[binary]`.
