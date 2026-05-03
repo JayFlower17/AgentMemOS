@@ -215,6 +215,20 @@ Verification:
 - `pytest -q tests/test_database_schema.py`: 1 passed.
 - `pytest -q`: 20 passed.
 
+### Upgrade structured memory extraction
+
+- Reworked the extractor from direct event-type mapping into a structured rule decision path.
+- Added content signal detection for risk, failure, decision, procedure, and scratch/local-note language.
+- Extraction decisions now record the extractor version and applied rules in memory write decision signals.
+- Task completion can now become procedural team knowledge only when the content reads like reusable guidance.
+- Coder tool observations stay agent-local when explicitly marked as scratch, while normal tool evidence becomes task-local.
+- Added extractor unit tests, including Chinese signal detection coverage.
+
+Verification:
+
+- `python -m py_compile agentmemos/extractor.py`: passed.
+- `pytest -q`: 24 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -234,11 +248,12 @@ Verification:
 - Server-side governance pass endpoint.
 - Dedicated governance service module.
 - SQLite schema compatibility guard for local MVP evolution.
+- Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
 
 ## Known Gaps
 
-- Extraction is still rule-based and MVP-level.
+- Extraction is now structured and auditable, but still rule-based; LLM/embedding-assisted extraction is pending.
 - Relation suggestions use lexical heuristics, not embeddings or LLM judgment.
 - No persistent job queue yet.
 - SQLite remains the default local store; Postgres/pgvector integration is still pending for production-like deployments.
@@ -248,13 +263,13 @@ Verification:
 
 ## Next Recommended Step
 
-Promote the governance pass into a scheduled/background capability:
+Prepare the next engineering foundation slice:
 
-1. Add a lightweight scheduler or queue-backed worker.
-2. Run governance passes on demand or on a configured interval.
-3. Keep conflict resolution explicit and auditable.
-4. Add pass history filtering by actor/time.
+1. Add a lightweight background job path for scheduled governance runs.
+2. Draft the Postgres/pgvector persistence boundary while keeping SQLite as the local default.
+3. Define the queue interface for event extraction and governance jobs.
+4. Keep conflict resolution explicit and auditable.
 
-This would close the loop:
+This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 
-`scheduled governance pass -> accepted duplicate relations -> audited actions -> retrieval governance`
+`event queue -> extraction worker -> memory store -> governance job -> retrieval governance`
