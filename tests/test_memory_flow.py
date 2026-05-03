@@ -1,9 +1,10 @@
 from uuid import uuid4
+import pytest
 
 from fastapi.testclient import TestClient
 
 from agentmemos.main import app
-from agentmemos.retrieval import EMBEDDING_SCORE_WEIGHT, _score_memory
+from agentmemos.retrieval import _score_memory
 from agentmemos.schemas import RetrieveRequest
 
 
@@ -510,7 +511,43 @@ def test_retrieval_scoring_accepts_optional_embedding_score_without_changing_def
         score_without_embedding, parts_without_embedding = _score_memory(req, model)
         score_with_embedding, parts_with_embedding = _score_memory(req, model, embedding_score=0.99)
 
-    assert EMBEDDING_SCORE_WEIGHT == 0.0
     assert score_with_embedding == score_without_embedding
     assert parts_with_embedding["embedding"] == 0.0
     assert "embedding" not in parts_without_embedding
+
+
+def test_retrieval_scoring_can_apply_embedding_weight_when_enabled_by_caller():
+    with TestClient(app) as client:
+        memory_response = client.post(
+            "/memories",
+            json={
+                "task_id": "task_embedding_score_enabled",
+                "agent_id": "reviewer_1",
+                "memory_type": "episodic",
+                "scope": "team-shared",
+                "content": "Retry policy requires bounded backoff before approval.",
+            },
+        )
+        assert memory_response.status_code == 201
+        memory = memory_response.json()
+
+        req = RetrieveRequest(
+            task_id="task_embedding_score_enabled",
+            agent_id="coder_1",
+            agent_role="coder",
+            query="delay strategy",
+            allowed_scopes=["team-shared"],
+        )
+        from agentmemos.models import MemoryRecordModel
+
+        model = MemoryRecordModel(**memory)
+        score_without_embedding, _ = _score_memory(req, model)
+        score_with_embedding, parts = _score_memory(
+            req,
+            model,
+            embedding_score=0.8,
+            embedding_weight=0.1,
+        )
+
+    assert parts["embedding"] == pytest.approx(0.08)
+    assert score_with_embedding == pytest.approx(score_without_embedding + 0.08)

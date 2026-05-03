@@ -263,8 +263,19 @@ def dashboard_stats(db: Session = Depends(get_db)) -> DashboardStats:
 
 
 @app.post("/retrieve", response_model=RetrieveResponse)
-def retrieve(payload: RetrieveRequest, db: Session = Depends(get_db)) -> RetrieveResponse:
-    memories, trace = retrieve_memories(db, payload)
+def retrieve(request: Request, payload: RetrieveRequest, db: Session = Depends(get_db)) -> RetrieveResponse:
+    embedding_scores = None
+    if settings.vector_retrieval_enabled and settings.vector_retrieval_weight > 0:
+        worker = request.app.state.memory_worker
+        query_embedding = worker.embedding_provider.embed(payload.query)
+        candidate_ids = [memory.memory_id for memory in MemoryRepository(db).list_recent(task_id=payload.task_id, limit=300)]
+        embedding_scores = worker.vector_store.search(query_embedding, candidate_ids=candidate_ids, limit=300)
+    memories, trace = retrieve_memories(
+        db,
+        payload,
+        embedding_scores=embedding_scores,
+        embedding_weight=settings.vector_retrieval_weight,
+    )
     return RetrieveResponse(
         trace_id=trace.trace_id,
         memories=[memory_to_schema(memory) for memory in memories],

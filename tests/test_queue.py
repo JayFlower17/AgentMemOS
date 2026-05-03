@@ -111,6 +111,50 @@ def test_worker_processes_embed_memory_job_into_vector_store():
         assert scores[memory_id] > 0
 
 
+def test_vector_assisted_retrieve_can_use_indexed_memory_when_enabled():
+    with TestClient(app) as client:
+        from agentmemos import main
+
+        previous_enabled = main.settings.vector_retrieval_enabled
+        previous_weight = main.settings.vector_retrieval_weight
+        main.settings.vector_retrieval_enabled = True
+        main.settings.vector_retrieval_weight = 0.1
+        try:
+            task_id = f"task_vector_retrieve_{uuid4().hex}"
+            response = client.post(
+                "/memories",
+                json={
+                    "task_id": task_id,
+                    "agent_id": "reviewer_1",
+                    "memory_type": "episodic",
+                    "scope": "team-shared",
+                    "content": "Retry policy requires bounded backoff before approval.",
+                },
+            )
+            assert response.status_code == 201
+            memory_id = response.json()["memory_id"]
+            asyncio.run(client.app.state.memory_worker._process_job(MemoryJob.embed_memory(memory_id)))
+
+            retrieve_response = client.post(
+                "/retrieve",
+                json={
+                    "task_id": task_id,
+                    "agent_id": "coder_1",
+                    "agent_role": "coder",
+                    "query": "bounded retry",
+                    "allowed_scopes": ["team-shared"],
+                },
+            )
+            assert retrieve_response.status_code == 200
+            trace = client.get(f"/traces/{retrieve_response.json()['trace_id']}").json()
+            scored = next(item for item in trace["scored_memories"] if item["memory_id"] == memory_id)
+            assert scored["score_parts"]["embedding"] > 0
+            assert "vector similarity" in trace["reason"]
+        finally:
+            main.settings.vector_retrieval_enabled = previous_enabled
+            main.settings.vector_retrieval_weight = previous_weight
+
+
 def test_event_ingestion_enqueues_extract_memory_job():
     with TestClient(app) as client:
         task_id = f"task_queue_ingest_{uuid4().hex}"

@@ -19,9 +19,6 @@ SCOPE_WEIGHTS = {
     MemoryScope.project_global: 0.9,
 }
 
-EMBEDDING_SCORE_WEIGHT = 0.0
-
-
 def _keyword_score(query: str, memory: MemoryRecordModel) -> float:
     terms = {term.lower() for term in query.split() if len(term) > 2}
     if not terms:
@@ -36,6 +33,7 @@ def _score_memory(
     memory: MemoryRecordModel,
     *,
     embedding_score: float = 0.0,
+    embedding_weight: float = 0.0,
 ) -> tuple[float, dict[str, float]]:
     type_weights = ROLE_TYPE_WEIGHTS[req.agent_role]
     parts = {
@@ -46,7 +44,7 @@ def _score_memory(
         "keyword": _keyword_score(req.query, memory) * 0.08,
     }
     if embedding_score:
-        parts["embedding"] = embedding_score * EMBEDDING_SCORE_WEIGHT
+        parts["embedding"] = embedding_score * embedding_weight
     return sum(parts.values()), parts
 
 
@@ -128,6 +126,7 @@ def retrieve_memories(
     req: RetrieveRequest,
     *,
     embedding_scores: dict[str, float] | None = None,
+    embedding_weight: float = 0.0,
 ) -> tuple[list[MemoryRecordModel], RetrievalTraceModel]:
     allowed = [scope.value for scope in req.allowed_scopes]
     stmt = (
@@ -169,6 +168,7 @@ def retrieve_memories(
             req,
             memory,
             embedding_score=(embedding_scores or {}).get(memory.memory_id, 0.0),
+            embedding_weight=embedding_weight,
         )
         warnings = _governance_warnings(memory, relations)
         if warnings:
@@ -192,6 +192,8 @@ def retrieve_memories(
     for item in scored_memories:
         item["selected"] = item["memory_id"] in selected_ids
     reason = "Selected memories by scope visibility, role/type affinity, confidence, importance, and keyword overlap."
+    if embedding_scores and embedding_weight:
+        reason = f"{reason} Applied vector similarity scoring."
     if governance_seen:
         reason = f"{reason} Applied memory governance: excluded archived/superseded memories and surfaced open relations."
     if reasons:
