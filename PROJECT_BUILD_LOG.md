@@ -487,6 +487,31 @@ Verification:
 - `pytest -q`: 65 passed.
 - `python examples/mcp_smoke_test.py`: passed against `http://127.0.0.1:8014`.
 
+### Add SSE realtime event stream
+
+- Added `MemoryEventBus` for process-local realtime event publishing.
+- Added `GET /events/stream` as an SSE endpoint with recent event replay.
+- Published realtime events for:
+  - agent event ingestion
+  - job enqueue/start/complete/failure
+  - manual memory creation
+  - extracted memory creation
+  - embedding indexing completion
+  - memory promotion
+  - memory status updates
+  - memory relation creation/resolution
+  - governance pass completion
+  - governance suggestion acceptance
+- Wired `MemoryWorker` to emit job, extraction, embedding, and governance events.
+- Added `examples/sse_watch.py` to subscribe to the event stream from a running service.
+- Updated README with SSE usage and event names.
+- Added tests for SSE event formatting, route registration, and memory write event publishing.
+
+Verification:
+
+- `python -m py_compile agentmemos/event_bus.py agentmemos/main.py agentmemos/worker.py agentmemos/services.py examples/sse_watch.py`: passed.
+- `pytest -q`: 68 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -517,6 +542,7 @@ Verification:
 - Expanded Python SDK client for external agent and adapter integration.
 - LangGraph-style adapter for graph/node state workflows.
 - MCP-ready tool registry, route mapping, dispatcher, lightweight JSON-RPC binding, optional official FastMCP runtime, and client configuration examples.
+- SSE realtime event stream for memory, job, and governance activity.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -531,14 +557,15 @@ Verification:
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
 - SDK covers core APIs; LangGraph-style adapter and MCP-ready tool layer exist, while OpenAI Agents/AutoGen/CrewAI adapters are still pending.
 - MCP integration has local client configuration examples, but has not yet been validated inside each external client UI.
+- SSE stream is process-local; it is not yet backed by Redis pub/sub for multi-process deployments.
 
 ## Next Recommended Step
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add SSE integration for realtime memory/governance updates.
+1. Operationalize Redis queues with independent worker process, retry/backoff, and queue status.
 2. Prepare pgvector storage for shared production vector indexes.
-3. Add operational documentation for Redis and SQLite vector store configuration.
+3. Add Redis pub/sub or equivalent fanout for multi-process SSE.
 4. Validate MCP configuration inside specific external client UIs when needed.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:

@@ -166,9 +166,42 @@ Tool to API mapping:
 | `agentmemos_list_insights` | `GET /memory-insights` |
 | `agentmemos_run_governance` | `POST /governance/run` |
 
+## Realtime Events
+
+AgentMemOS exposes a lightweight Server-Sent Events stream for local realtime monitoring:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/sse_watch.py
+```
+
+Or subscribe directly:
+
+```text
+GET /events/stream?replay=10
+Accept: text/event-stream
+```
+
+The stream emits events such as:
+
+- `agent_event.ingested`
+- `job.enqueued`
+- `job.started`
+- `job.completed`
+- `job.failed`
+- `memory.created`
+- `memory.extracted`
+- `memory.embedded`
+- `memory.promoted`
+- `memory.status_updated`
+- `memory_relation.created`
+- `memory_relation.resolved`
+- `governance.completed`
+- `governance.suggestion_accepted`
+
 ## Core Endpoints
 
 - `POST /events` ingests an agent runtime event and queues memory extraction.
+- `GET /events/stream` streams realtime memory, job, and governance events through SSE.
 - `POST /memories` creates an explicit memory record.
 - `POST /retrieve` returns scoped, role-aware memory context and stores a retrieval trace.
 - `POST /memories/{memory_id}/promote` promotes a memory to a broader scope.

@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
+import asyncio
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from agentmemos.config import get_settings
 from agentmemos.database import get_db, init_db
 from agentmemos.enums import MemoryStatus
+from agentmemos.event_bus import MemoryEventBus
 from agentmemos.governance import (
     accept_relation_suggestion_by_id,
     create_relation_from_values,
@@ -79,12 +81,15 @@ async def lifespan(app: FastAPI):
         redis_queue_name=settings.redis_queue_name,
     )
     vector_store = create_vector_store(backend=settings.vector_store_backend)
-    worker = MemoryWorker(job_queue=job_queue, vector_store=vector_store)
+    event_bus = MemoryEventBus()
+    event_bus.bind_loop(asyncio.get_running_loop())
+    worker = MemoryWorker(job_queue=job_queue, vector_store=vector_store, event_bus=event_bus)
     await worker.start()
     governance_scheduler = GovernanceScheduler(job_queue=worker.job_queue)
     await governance_scheduler.start()
     app.state.memory_worker = worker
     app.state.governance_scheduler = governance_scheduler
+    app.state.event_bus = event_bus
     try:
         yield
     finally:
@@ -108,16 +113,55 @@ def dashboard() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/events/stream", include_in_schema=False)
+async def stream_events(request: Request, replay: int = 10) -> StreamingResponse:
+    async def event_stream():
+        async for event in request.app.state.event_bus.subscribe(replay=replay):
+            if await request.is_disconnected():
+                break
+            yield event.to_sse()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/events", response_model=AgentEvent, status_code=status.HTTP_202_ACCEPTED)
 async def ingest_event(request: Request, payload: AgentEventCreate, db: Session = Depends(get_db)) -> AgentEvent:
-    service = EventIngestionService(EventRepository(db), request.app.state.memory_worker.job_queue)
+    service = EventIngestionService(
+        EventRepository(db),
+        request.app.state.memory_worker.job_queue,
+        request.app.state.event_bus,
+    )
     event = await service.ingest(payload)
+    request.app.state.event_bus.publish(
+        "agent_event.ingested",
+        {
+            "event_id": event.event_id,
+            "event_type": event.event_type,
+            "task_id": event.task_id,
+            "agent_id": event.agent_id,
+            "agent_role": event.agent_role,
+        },
+    )
     return event_to_schema(event)
 
 
 @app.post("/memories", response_model=MemoryRecord, status_code=status.HTTP_201_CREATED)
 async def create_memory_endpoint(request: Request, payload: MemoryCreate, db: Session = Depends(get_db)) -> MemoryRecord:
     memory = create_memory(db, payload)
+    request.app.state.event_bus.publish(
+        "memory.created",
+        {
+            "memory_id": memory.memory_id,
+            "task_id": memory.task_id,
+            "agent_id": memory.agent_id,
+            "scope": memory.scope,
+            "memory_type": memory.memory_type,
+        },
+    )
     await request.app.state.memory_worker.enqueue_job(MemoryJob.embed_memory(memory.memory_id))
     return memory_to_schema(memory)
 
@@ -205,19 +249,39 @@ def list_memory_relation_suggestions(
 def accept_memory_relation_suggestion(
     suggestion_id: str,
     payload: AcceptMemoryRelationSuggestionRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> AcceptMemoryRelationSuggestionResponse:
-    return accept_relation_suggestion_by_id(
+    response = accept_relation_suggestion_by_id(
         db,
         suggestion_id=suggestion_id,
         actor=payload.actor,
         reason=payload.reason,
     )
+    request.app.state.event_bus.publish(
+        "governance.suggestion_accepted",
+        {
+            "suggestion_id": suggestion_id,
+            "relation_id": response.relation.relation_id,
+            "action_id": response.action.action_id,
+            "actor": response.action.actor,
+        },
+    )
+    return response
 
 
 @app.post("/governance/run", response_model=RunGovernanceResponse)
-def run_governance_pass(payload: RunGovernanceRequest, db: Session = Depends(get_db)) -> RunGovernanceResponse:
-    return run_governance(db, payload)
+def run_governance_pass(request: Request, payload: RunGovernanceRequest, db: Session = Depends(get_db)) -> RunGovernanceResponse:
+    summary = run_governance(db, payload)
+    request.app.state.event_bus.publish(
+        "governance.completed",
+        {
+            "actor": summary.action.actor,
+            "accepted_suggestions": summary.accepted_suggestions,
+            "accepted_relation_ids": summary.accepted_relation_ids,
+        },
+    )
+    return summary
 
 
 @app.get("/governance/scheduler", response_model=GovernanceSchedulerStatus)
@@ -291,15 +355,28 @@ def retrieve(request: Request, payload: RetrieveRequest, db: Session = Depends(g
 
 
 @app.post("/memories/{memory_id}/promote", response_model=MemoryRecord)
-def promote_memory(memory_id: str, payload: PromoteMemoryRequest, db: Session = Depends(get_db)) -> MemoryRecord:
+def promote_memory(
+    memory_id: str,
+    payload: PromoteMemoryRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> MemoryRecord:
     memory = MemoryLifecycleService(MemoryRepository(db)).promote(memory_id, payload)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    request.app.state.event_bus.publish(
+        "memory.promoted",
+        {"memory_id": memory.memory_id, "to_scope": memory.scope, "reason": payload.reason},
+    )
     return memory_to_schema(memory)
 
 
 @app.post("/memory-relations", response_model=MemoryRelation, status_code=status.HTTP_201_CREATED)
-def create_memory_relation(payload: MemoryRelationCreate, db: Session = Depends(get_db)) -> MemoryRelation:
+def create_memory_relation(
+    payload: MemoryRelationCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> MemoryRelation:
     if payload.source_memory_id == payload.target_memory_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A memory cannot relate to itself")
     relation = create_relation_from_values(
@@ -311,6 +388,15 @@ def create_memory_relation(payload: MemoryRelationCreate, db: Session = Depends(
     )
     db.commit()
     db.refresh(relation)
+    request.app.state.event_bus.publish(
+        "memory_relation.created",
+        {
+            "relation_id": relation.relation_id,
+            "source_memory_id": relation.source_memory_id,
+            "target_memory_id": relation.target_memory_id,
+            "relation_type": relation.relation_type,
+        },
+    )
     return memory_relation_to_schema(relation)
 
 
@@ -339,21 +425,33 @@ def list_memory_relations_for_memory(memory_id: str, db: Session = Depends(get_d
 def resolve_memory_relation(
     relation_id: str,
     payload: MemoryRelationResolveRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> MemoryRelation:
     relation = GovernanceRelationService(GovernanceRepository(db)).resolve_relation(relation_id, payload)
     if relation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Relation not found")
+    request.app.state.event_bus.publish(
+        "memory_relation.resolved",
+        {"relation_id": relation.relation_id, "reason": payload.reason},
+    )
     return memory_relation_to_schema(relation)
 
 
 @app.post("/memories/{memory_id}/status", response_model=MemoryRecord)
 def update_memory_status(
-    memory_id: str, payload: UpdateMemoryStatusRequest, db: Session = Depends(get_db)
+    memory_id: str,
+    payload: UpdateMemoryStatusRequest,
+    request: Request,
+    db: Session = Depends(get_db),
 ) -> MemoryRecord:
     memory = MemoryLifecycleService(MemoryRepository(db)).update_status(memory_id, payload)
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    request.app.state.event_bus.publish(
+        "memory.status_updated",
+        {"memory_id": memory.memory_id, "status": memory.status, "reason": payload.reason},
+    )
     return memory_to_schema(memory)
 
 

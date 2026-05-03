@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from agentmemos.config import get_settings
 from agentmemos.database import SessionLocal
+from agentmemos.event_bus import MemoryEventBus
 from agentmemos.extractor import explain_extraction, extract_memory
 from agentmemos.governance import run_governance
 from agentmemos.models import AgentEventModel, MemoryDecisionTraceModel, MemoryRecordModel
@@ -20,10 +21,12 @@ class MemoryWorker:
         job_queue: JobQueue | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         vector_store: VectorStore | None = None,
+        event_bus: MemoryEventBus | None = None,
     ) -> None:
         self.job_queue = job_queue or InMemoryJobQueue()
         self.embedding_provider = embedding_provider or HashingEmbeddingProvider()
         self.vector_store = vector_store or InMemoryVectorStore()
+        self.event_bus = event_bus
         self._task: asyncio.Task | None = None
         self._running = False
         self.settings = get_settings()
@@ -44,6 +47,7 @@ class MemoryWorker:
 
     async def enqueue_job(self, job: MemoryJob) -> None:
         await self.job_queue.enqueue(job)
+        self._publish("job.enqueued", {"job_type": job.job_type.value, "payload": job.payload})
 
     async def drain(self) -> None:
         await self.job_queue.join()
@@ -52,7 +56,14 @@ class MemoryWorker:
         while self._running:
             job = await self.job_queue.dequeue()
             try:
+                self._publish("job.started", {"job_type": job.job_type.value, "payload": job.payload})
                 await self._process_job(job)
+                self._publish("job.completed", {"job_type": job.job_type.value, "payload": job.payload})
+            except Exception as exc:
+                self._publish(
+                    "job.failed",
+                    {"job_type": job.job_type.value, "payload": job.payload, "error": str(exc)},
+                )
             finally:
                 self.job_queue.task_done()
 
@@ -64,15 +75,35 @@ class MemoryWorker:
             if event_id:
                 memory = await asyncio.to_thread(self._process_event, event_id)
                 if memory is not None:
+                    self._publish(
+                        "memory.extracted",
+                        {
+                            "memory_id": memory.memory_id,
+                            "event_id": event_id,
+                            "task_id": memory.task_id,
+                            "scope": memory.scope,
+                            "memory_type": memory.memory_type,
+                        },
+                    )
                     await self.enqueue_job(MemoryJob.embed_memory(memory.memory_id))
             return
         if job.job_type == JobType.embed_memory:
             memory_id = str(job.payload.get("memory_id") or "")
             if memory_id:
-                await asyncio.to_thread(self._process_embedding, memory_id)
+                embedded = await asyncio.to_thread(self._process_embedding, memory_id)
+                if embedded:
+                    self._publish("memory.embedded", {"memory_id": memory_id})
             return
         if job.job_type == JobType.governance_pass:
-            await asyncio.to_thread(self._process_governance_pass, job)
+            summary = await asyncio.to_thread(self._process_governance_pass, job)
+            self._publish(
+                "governance.completed",
+                {
+                    "actor": summary.action.actor,
+                    "accepted_suggestions": summary.accepted_suggestions,
+                    "accepted_relation_ids": summary.accepted_relation_ids,
+                },
+            )
 
     def _process_event(self, event_id: str) -> MemoryRecordModel | None:
         with SessionLocal() as db:
@@ -85,22 +116,27 @@ class MemoryWorker:
             reason, signals = explain_extraction(event, memory)
             return create_memory(db, memory, decision_type="extracted", decision_reason=reason, decision_signals=signals)
 
-    def _process_embedding(self, memory_id: str) -> None:
+    def _process_embedding(self, memory_id: str) -> bool:
         with SessionLocal() as db:
             memory = db.get(MemoryRecordModel, memory_id)
             if memory is None:
-                return
+                return False
             embedding = self.embedding_provider.embed(memory_embedding_text(memory))
             self.vector_store.upsert(memory.memory_id, embedding)
+            return True
 
-    def _process_governance_pass(self, job: MemoryJob) -> None:
+    def _process_governance_pass(self, job: MemoryJob):
         payload = RunGovernanceRequest(
             actor=str(job.payload.get("actor") or "governance_worker"),
             duplicate_confidence_threshold=float(job.payload.get("duplicate_confidence_threshold") or 0.85),
             max_accepts=int(job.payload.get("max_accepts") or 10),
         )
         with SessionLocal() as db:
-            run_governance(db, payload)
+            return run_governance(db, payload)
+
+    def _publish(self, event_type: str, payload: dict | None = None) -> None:
+        if self.event_bus is not None:
+            self.event_bus.publish(event_type, payload)
 
 
 def create_memory(

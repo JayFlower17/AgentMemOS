@@ -1,5 +1,6 @@
 from agentmemos.queue import MemoryJob, JobQueue
 from agentmemos.repositories import EventRepository, GovernanceRepository, MemoryRepository
+from agentmemos.event_bus import MemoryEventBus
 from agentmemos.schemas import (
     AgentEventCreate,
     MemoryRelationResolveRequest,
@@ -10,13 +11,22 @@ from agentmemos.models import AgentEventModel, MemoryRecordModel, MemoryRelation
 
 
 class EventIngestionService:
-    def __init__(self, event_repository: EventRepository, job_queue: JobQueue) -> None:
+    def __init__(
+        self,
+        event_repository: EventRepository,
+        job_queue: JobQueue,
+        event_bus: MemoryEventBus | None = None,
+    ) -> None:
         self.event_repository = event_repository
         self.job_queue = job_queue
+        self.event_bus = event_bus
 
     async def ingest(self, payload: AgentEventCreate) -> AgentEventModel:
         event = self.event_repository.create(payload)
-        await self.job_queue.enqueue(MemoryJob.extract_memory(event.event_id))
+        job = MemoryJob.extract_memory(event.event_id)
+        await self.job_queue.enqueue(job)
+        if self.event_bus is not None:
+            self.event_bus.publish("job.enqueued", {"job_type": job.job_type.value, "payload": job.payload})
         return event
 
 
