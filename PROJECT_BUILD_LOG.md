@@ -445,6 +445,30 @@ Verification:
 - `python -m py_compile agentmemos/mcp_tools.py agentmemos/mcp_server.py examples/mcp_tool_usage.py examples/mcp_stdio_server.py agentmemos/__init__.py`: passed.
 - `pytest -q`: 63 passed.
 
+### Bind MCP tools to official SDK runtime
+
+- Added optional dependency extra `agentmemos[mcp]` backed by the official `mcp[cli]` Python SDK.
+- Added `agentmemos.mcp_runtime` with a FastMCP server factory and runtime entrypoint.
+- Registered AgentMemOS tools with official FastMCP decorators:
+  - `agentmemos_emit_event`
+  - `agentmemos_retrieve`
+  - `agentmemos_create_memory`
+  - `agentmemos_list_memories`
+  - `agentmemos_list_insights`
+  - `agentmemos_run_governance`
+- Preserved the no-extra-dependency lightweight JSON-RPC binding for local testing and fallback.
+- Added `examples/mcp_fastmcp_server.py` for stdio or streamable-http transport.
+- Added package console scripts:
+  - `agentmemos-mcp`
+  - `agentmemos-mcp-jsonrpc`
+- Documented MCP startup paths in the README.
+- Added tests that verify the FastMCP registration layer without requiring the optional SDK during normal test runs.
+
+Verification:
+
+- `python -m py_compile agentmemos/mcp_runtime.py agentmemos/mcp_server.py examples/mcp_fastmcp_server.py agentmemos/__init__.py`: passed.
+- `pytest -q`: 64 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -474,7 +498,7 @@ Verification:
 - Durable SQLite vector store option with in-memory default preserved.
 - Expanded Python SDK client for external agent and adapter integration.
 - LangGraph-style adapter for graph/node state workflows.
-- MCP-ready tool registry, dispatcher, and lightweight JSON-RPC server binding.
+- MCP-ready tool registry, dispatcher, lightweight JSON-RPC binding, and optional official FastMCP runtime.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -488,13 +512,13 @@ Verification:
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
 - SDK covers core APIs; LangGraph-style adapter and MCP-ready tool layer exist, while OpenAI Agents/AutoGen/CrewAI adapters are still pending.
-- MCP integration currently provides tool definitions, dispatch handlers, and a lightweight JSON-RPC binding; a full MCP SDK/transport runtime is still pending.
+- MCP integration has an optional FastMCP runtime, but production client configuration examples are still pending.
 
 ## Next Recommended Step
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Bind the MCP tool layer to the official MCP SDK runtime when adding production transport support.
+1. Add MCP client configuration examples for Claude Desktop, Cursor, and other stdio consumers.
 2. Prepare pgvector storage for shared production vector indexes.
 3. Add SSE integration for realtime memory/governance updates.
 4. Add operational documentation for Redis and SQLite vector store configuration.

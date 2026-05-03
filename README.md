@@ -109,6 +109,44 @@ result = wrapped_step({
 
 The adapter retrieves role-aware memory before the step and emits a completion event after the step.
 
+## MCP Integration
+
+AgentMemOS can be exposed as MCP tools for external agent clients.
+
+The lightweight JSON-RPC binding has no extra dependency:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/mcp_stdio_server.py
+```
+
+For the official MCP Python SDK runtime, install the optional dependency and run the FastMCP entrypoint:
+
+```powershell
+pip install "agentmemos[mcp]"
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/mcp_fastmcp_server.py
+```
+
+When installed as a package, the official runtime is also available as a console command:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; agentmemos-mcp
+```
+
+The official runtime defaults to stdio transport. Use streamable HTTP by setting:
+
+```powershell
+$env:AGENTMEMOS_MCP_TRANSPORT="streamable-http"; python examples/mcp_fastmcp_server.py
+```
+
+Current MCP tools:
+
+- `agentmemos_emit_event`
+- `agentmemos_retrieve`
+- `agentmemos_create_memory`
+- `agentmemos_list_memories`
+- `agentmemos_list_insights`
+- `agentmemos_run_governance`
+
 ## Core Endpoints
 
 - `POST /events` ingests an agent runtime event and queues memory extraction.

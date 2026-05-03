@@ -11,6 +11,10 @@ dependencies = [
     "uvicorn[standard]>=0.27",
 ]
 
+[project.scripts]
+agentmemos-mcp = "agentmemos.mcp_runtime:main"
+agentmemos-mcp-jsonrpc = "agentmemos.mcp_server:main"
+
 [project.optional-dependencies]
 dev = [
     "httpx>=0.27",
@@ -18,6 +22,9 @@ dev = [
 ]
 redis = [
     "redis>=5",
+]
+mcp = [
+    "mcp[cli]>=1.0",
 ]
 
 [tool.pytest.ini_options]

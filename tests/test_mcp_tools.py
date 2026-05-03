@@ -1,6 +1,7 @@
 import pytest
 
 from agentmemos import AgentMemOSClient, AgentMemOSMCPError, AgentMemOSMCPServer, AgentMemOSMCPToolbox
+from agentmemos.mcp_runtime import _register_fastmcp_tools
 
 
 def test_mcp_toolbox_lists_tool_schemas():
@@ -171,3 +172,42 @@ def test_mcp_server_returns_json_rpc_errors():
 
     invalid = server.handle_request({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {}})
     assert invalid["error"]["code"] == -32602
+
+
+def test_fastmcp_runtime_registers_official_sdk_tools():
+    calls = []
+
+    def transport(method, path, payload):
+        calls.append((method, path, payload))
+        if path == "/retrieve":
+            return {"trace_id": "trace_fastmcp", "memories": []}
+        if path == "/governance/run":
+            return {"accepted_suggestions": 1}
+        raise AssertionError(path)
+
+    class FakeFastMCP:
+        def __init__(self):
+            self.tools = {}
+
+        def tool(self):
+            def decorator(func):
+                self.tools[func.__name__] = func
+                return func
+
+            return decorator
+
+    fake_mcp = FakeFastMCP()
+    toolbox = AgentMemOSMCPToolbox(client=AgentMemOSClient(transport=transport))
+
+    returned = _register_fastmcp_tools(fake_mcp, toolbox)
+
+    assert returned is fake_mcp
+    assert "agentmemos_retrieve" in fake_mcp.tools
+    assert "agentmemos_run_governance" in fake_mcp.tools
+    assert fake_mcp.tools["agentmemos_retrieve"](
+        task_id="task_1",
+        agent_id="coder_1",
+        agent_role="coder",
+        query="retry",
+    )["trace_id"] == "trace_fastmcp"
+    assert fake_mcp.tools["agentmemos_run_governance"](max_accepts=1)["accepted_suggestions"] == 1
