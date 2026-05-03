@@ -49,6 +49,17 @@ class MemoryRecordModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class MemoryEmbeddingModel(Base):
+    __tablename__ = "memory_embeddings"
+
+    memory_id: Mapped[str] = mapped_column(String(64), ForeignKey("memory_records.memory_id"), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), default="hashing")
+    dimensions: Mapped[int] = mapped_column(default=0)
+    embedding: Mapped[list[float]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class RetrievalTraceModel(Base):
     __tablename__ = "retrieval_traces"
 

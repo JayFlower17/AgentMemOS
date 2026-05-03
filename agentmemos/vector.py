@@ -2,7 +2,10 @@ import math
 from collections import Counter
 from typing import Protocol
 
-from agentmemos.models import MemoryRecordModel
+from sqlalchemy import select
+
+from agentmemos.database import SessionLocal
+from agentmemos.models import MemoryEmbeddingModel, MemoryRecordModel
 
 
 class EmbeddingProvider(Protocol):
@@ -78,6 +81,49 @@ class InMemoryVectorStore:
         }
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         return dict(ranked[:limit])
+
+
+class SqliteVectorStore:
+    def __init__(self, *, provider: str = "hashing") -> None:
+        self.provider = provider
+
+    def upsert(self, memory_id: str, embedding: list[float]) -> None:
+        with SessionLocal() as db:
+            record = db.get(MemoryEmbeddingModel, memory_id)
+            if record is None:
+                record = MemoryEmbeddingModel(memory_id=memory_id)
+                db.add(record)
+            record.provider = self.provider
+            record.dimensions = len(embedding)
+            record.embedding = embedding
+            db.commit()
+
+    def search(
+        self,
+        query_embedding: list[float],
+        *,
+        candidate_ids: list[str] | None = None,
+        limit: int = 20,
+    ) -> dict[str, float]:
+        with SessionLocal() as db:
+            stmt = select(MemoryEmbeddingModel)
+            if candidate_ids is not None:
+                stmt = stmt.where(MemoryEmbeddingModel.memory_id.in_(candidate_ids))
+            records = list(db.scalars(stmt))
+        scores = {
+            record.memory_id: cosine_similarity(query_embedding, list(record.embedding or []))
+            for record in records
+        }
+        ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        return dict(ranked[:limit])
+
+
+def create_vector_store(*, backend: str = "memory") -> VectorStore:
+    if backend == "memory":
+        return InMemoryVectorStore()
+    if backend == "sqlite":
+        return SqliteVectorStore()
+    raise ValueError(f"Unsupported vector store backend: {backend}")
 
 
 def memory_embedding_text(memory: MemoryRecordModel) -> str:

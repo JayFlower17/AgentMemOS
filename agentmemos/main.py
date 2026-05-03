@@ -66,6 +66,7 @@ from agentmemos.serializers import (
     trace_to_schema,
 )
 from agentmemos.services import EventIngestionService, GovernanceRelationService, MemoryLifecycleService
+from agentmemos.vector import create_vector_store
 from agentmemos.worker import MemoryWorker, create_memory
 
 
@@ -77,7 +78,8 @@ async def lifespan(app: FastAPI):
         redis_url=settings.redis_url,
         redis_queue_name=settings.redis_queue_name,
     )
-    worker = MemoryWorker(job_queue=job_queue)
+    vector_store = create_vector_store(backend=settings.vector_store_backend)
+    worker = MemoryWorker(job_queue=job_queue, vector_store=vector_store)
     await worker.start()
     governance_scheduler = GovernanceScheduler(job_queue=worker.job_queue)
     await governance_scheduler.start()

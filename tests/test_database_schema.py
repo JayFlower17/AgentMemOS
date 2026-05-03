@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, inspect, text
 
 from agentmemos.database import Base
-from agentmemos.models import RetrievalTraceModel
+from agentmemos.models import MemoryEmbeddingModel, RetrievalTraceModel
 
 
 def test_sqlite_schema_ensure_adds_missing_known_columns():
@@ -21,6 +21,26 @@ def test_sqlite_schema_ensure_adds_missing_known_columns():
         columns = {column["name"] for column in inspect(test_engine).get_columns("retrieval_traces")}
         assert "scored_memories" in columns
         assert "filter_reasons" in columns
+    finally:
+        database.engine = original_engine
+        database.SessionLocal = original_session_local
+
+
+def test_init_db_creates_memory_embedding_table():
+    from agentmemos import database
+
+    original_engine = database.engine
+    original_session_local = database.SessionLocal
+    try:
+        test_engine = create_engine("sqlite:///:memory:", future=True)
+        database.engine = test_engine
+        database.init_db()
+
+        tables = set(inspect(test_engine).get_table_names())
+        columns = {column["name"] for column in inspect(test_engine).get_columns("memory_embeddings")}
+
+        assert MemoryEmbeddingModel.__tablename__ in tables
+        assert {"memory_id", "provider", "dimensions", "embedding"}.issubset(columns)
     finally:
         database.engine = original_engine
         database.SessionLocal = original_session_local

@@ -370,6 +370,22 @@ Verification:
 - `python -m py_compile agentmemos/queue.py agentmemos/config.py agentmemos/main.py`: passed.
 - `pytest -q`: 48 passed.
 
+### Add durable SQLite vector store
+
+- Added `MemoryEmbeddingModel` and `memory_embeddings` table.
+- Added vector store configuration:
+  - `AGENTMEMOS_VECTOR_STORE_BACKEND`
+- Added `SqliteVectorStore`.
+- Added `create_vector_store(...)` factory.
+- FastAPI lifespan now creates the configured vector store and passes it to `MemoryWorker`.
+- Default vector store remains `memory`; `sqlite` can be enabled for durable local vector indexes.
+- Added tests for SQLite vector persistence across store instances, vector store factory behavior, and memory embedding table creation.
+
+Verification:
+
+- `python -m py_compile agentmemos/models.py agentmemos/vector.py agentmemos/config.py agentmemos/main.py`: passed.
+- `pytest -q`: 51 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -396,6 +412,7 @@ Verification:
 - Embedding indexing job backed by local `InMemoryVectorStore`.
 - Optional vector-assisted retrieval behind disabled-by-default configuration.
 - Optional Redis-backed `JobQueue` adapter with in-memory default preserved.
+- Durable SQLite vector store option with in-memory default preserved.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -405,7 +422,7 @@ Verification:
 - Extraction is now structured and auditable, but still rule-based; LLM-assisted extraction is pending.
 - Relation suggestions and retrieval still use lexical heuristics by default; vector-assisted retrieval can be enabled locally but is not backed by pgvector yet.
 - Governance, extraction, and embedding indexing use a typed job queue; Redis adapter exists but is optional and not the default.
-- SQLite remains the default local store behind thin repositories; Postgres/pgvector integration is still pending for production-like deployments.
+- SQLite remains the default local store behind thin repositories; local durable vector storage exists, while Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
 - SDK and external agent-framework adapters are still minimal.
@@ -414,10 +431,10 @@ Verification:
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Prepare pgvector storage for durable/shared vector indexes.
-2. Keep SQLite repositories and in-process workers as the default implementation.
-3. Add SDK or agent-framework adapters on top of the service layer.
-4. Add SSE/MCP integration once the core service boundary settles.
+1. Add SDK or agent-framework adapters on top of the service layer.
+2. Prepare pgvector storage for shared production vector indexes.
+3. Add SSE/MCP integration once the core service boundary settles.
+4. Add operational documentation for Redis and SQLite vector store configuration.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 
