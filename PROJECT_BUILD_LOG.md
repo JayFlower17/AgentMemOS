@@ -569,6 +569,35 @@ Verification:
 - `pytest -q`: 73 passed.
 - `docker compose -f docker-compose.redis.yml config`: passed.
 
+### Run real Redis queue E2E smoke test
+
+- Started a real Redis container from `docker-compose.redis.yml`.
+- Installed the optional Python Redis client in the local environment for the smoke test.
+- Added `examples/redis_queue_e2e_smoke.py` after manual shell startup exposed fragile environment quoting on Windows.
+- The E2E smoke runner:
+  - flushes Redis DB 0
+  - starts AgentMemOS API in Redis/API-only mode
+  - starts an independent `agentmemos.worker_app` process
+  - verifies `/queue/status` reports Redis backend and API worker disabled
+  - emits an event through the SDK
+  - waits until the independent worker extracts a memory
+  - prints queue status before and after
+  - terminates child processes cleanly
+- Updated README with the one-command E2E smoke runner.
+
+Verification:
+
+- `docker compose -f docker-compose.redis.yml up -d`: passed; Redis container became healthy.
+- `docker exec agentmemos-redis redis-cli ping`: passed with `PONG`.
+- `pip install "redis>=5"`: installed Redis Python client for the local smoke test environment.
+- `python -m py_compile examples/redis_queue_e2e_smoke.py examples/redis_queue_smoke_test.py`: passed.
+- First direct script run exposed missing repo-root import path; fixed `examples/redis_queue_e2e_smoke.py`.
+- `python examples/redis_queue_e2e_smoke.py`: passed.
+  - `/queue/status` before: Redis backend, API worker disabled, empty queue.
+  - `/queue/status` after: `enqueued=2`, `dequeued=2`, `completed=2`, `failed=0`, `dead_lettered=0`.
+  - Extracted memory from independent worker: `mem_955ec718ffd34737`.
+- `pytest -q`: 76 passed.
+
 ### Add pgvector storage adapter and local validation path
 
 - Added optional `postgres` dependency extra with `psycopg[binary]`.

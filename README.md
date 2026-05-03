@@ -253,6 +253,12 @@ Run a Redis queue smoke test after starting Redis, the API, and one worker:
 $env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/redis_queue_smoke_test.py
 ```
 
+Or run the full local E2E smoke test, which starts API-only mode and an independent worker for you:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/redis_queue_e2e_smoke.py
+```
+
 Stop Redis when finished:
 
 ```powershell
