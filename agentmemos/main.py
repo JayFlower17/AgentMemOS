@@ -17,6 +17,7 @@ from agentmemos.governance import (
     list_relation_suggestions,
     run_governance,
 )
+from agentmemos.jobs import GovernanceScheduler
 from agentmemos.models import (
     AgentEventModel,
     MemoryDecisionTraceModel,
@@ -36,6 +37,7 @@ from agentmemos.schemas import (
     AgentEvent,
     AgentEventCreate,
     DashboardStats,
+    GovernanceSchedulerStatus,
     HealthResponse,
     MemoryCreate,
     MemoryDecisionTrace,
@@ -74,10 +76,14 @@ async def lifespan(app: FastAPI):
     init_db()
     worker = MemoryWorker()
     await worker.start()
+    governance_scheduler = GovernanceScheduler()
+    await governance_scheduler.start()
     app.state.memory_worker = worker
+    app.state.governance_scheduler = governance_scheduler
     try:
         yield
     finally:
+        await governance_scheduler.stop()
         await worker.stop()
 
 
@@ -239,6 +245,11 @@ def accept_memory_relation_suggestion(
 @app.post("/governance/run", response_model=RunGovernanceResponse)
 def run_governance_pass(payload: RunGovernanceRequest, db: Session = Depends(get_db)) -> RunGovernanceResponse:
     return run_governance(db, payload)
+
+
+@app.get("/governance/scheduler", response_model=GovernanceSchedulerStatus)
+def get_governance_scheduler_status(request: Request) -> GovernanceSchedulerStatus:
+    return GovernanceSchedulerStatus(**request.app.state.governance_scheduler.state())
 
 
 @app.get("/memory-governance-actions", response_model=list[MemoryGovernanceAction])

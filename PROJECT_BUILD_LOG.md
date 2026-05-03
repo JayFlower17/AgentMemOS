@@ -229,6 +229,25 @@ Verification:
 - `python -m py_compile agentmemos/extractor.py`: passed.
 - `pytest -q`: 24 passed.
 
+### Add governance background scheduler
+
+- Added `agentmemos/jobs.py` with a lightweight `GovernanceScheduler`.
+- Wired the scheduler into FastAPI lifespan alongside the memory extraction worker.
+- Scheduler is disabled by default and can be enabled by environment variables.
+- Added scheduler configuration:
+  - `AGENTMEMOS_GOVERNANCE_SCHEDULER_ENABLED`
+  - `AGENTMEMOS_GOVERNANCE_SCHEDULER_INTERVAL_SECONDS`
+  - `AGENTMEMOS_GOVERNANCE_SCHEDULER_ACTOR`
+  - `AGENTMEMOS_GOVERNANCE_DUPLICATE_CONFIDENCE_THRESHOLD`
+  - `AGENTMEMOS_GOVERNANCE_MAX_ACCEPTS`
+- Added `GET /governance/scheduler` to inspect scheduler state, thresholds, last run summary, and last error.
+- Added tests for one-shot scheduler execution and default disabled status.
+
+Verification:
+
+- `python -m py_compile agentmemos/jobs.py agentmemos/main.py agentmemos/config.py agentmemos/schemas.py`: passed.
+- `pytest -q`: 26 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -246,6 +265,7 @@ Verification:
 - Audited acceptance path for governance suggestions.
 - Conservative governance agent example.
 - Server-side governance pass endpoint.
+- Optional background governance scheduler.
 - Dedicated governance service module.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
@@ -255,19 +275,19 @@ Verification:
 
 - Extraction is now structured and auditable, but still rule-based; LLM/embedding-assisted extraction is pending.
 - Relation suggestions use lexical heuristics, not embeddings or LLM judgment.
-- No persistent job queue yet.
+- Governance has a lightweight in-process scheduler, but no persistent/distributed job queue yet.
 - SQLite remains the default local store; Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
-- Governance pass is available as an endpoint, but not yet scheduled as a background job.
+- Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
 - SDK and adapters are still minimal.
 
 ## Next Recommended Step
 
-Prepare the next engineering foundation slice:
+Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add a lightweight background job path for scheduled governance runs.
-2. Draft the Postgres/pgvector persistence boundary while keeping SQLite as the local default.
-3. Define the queue interface for event extraction and governance jobs.
+1. Define repository interfaces for memory, event, trace, relation, and governance action persistence.
+2. Define a queue/job abstraction for extraction and governance jobs.
+3. Keep SQLite/in-process workers as the default implementation.
 4. Keep conflict resolution explicit and auditable.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:

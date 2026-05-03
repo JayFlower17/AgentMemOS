@@ -181,6 +181,17 @@ class RunGovernanceResponse(BaseModel):
     action: MemoryGovernanceAction
 
 
+class GovernanceSchedulerStatus(BaseModel):
+    enabled: bool
+    running: bool
+    interval_seconds: float
+    duplicate_confidence_threshold: float
+    max_accepts: int
+    last_run_at: datetime | None = None
+    last_error: str | None = None
+    last_summary: dict[str, Any] | None = None
+
+
 class PromotionDecision(BaseModel):
     decision_id: str
     memory_id: str
