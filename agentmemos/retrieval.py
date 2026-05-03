@@ -19,6 +19,8 @@ SCOPE_WEIGHTS = {
     MemoryScope.project_global: 0.9,
 }
 
+EMBEDDING_SCORE_WEIGHT = 0.0
+
 
 def _keyword_score(query: str, memory: MemoryRecordModel) -> float:
     terms = {term.lower() for term in query.split() if len(term) > 2}
@@ -29,7 +31,12 @@ def _keyword_score(query: str, memory: MemoryRecordModel) -> float:
     return hits / len(terms)
 
 
-def _score_memory(req: RetrieveRequest, memory: MemoryRecordModel) -> tuple[float, dict[str, float]]:
+def _score_memory(
+    req: RetrieveRequest,
+    memory: MemoryRecordModel,
+    *,
+    embedding_score: float = 0.0,
+) -> tuple[float, dict[str, float]]:
     type_weights = ROLE_TYPE_WEIGHTS[req.agent_role]
     parts = {
         "importance": memory.importance * 0.35,
@@ -38,6 +45,8 @@ def _score_memory(req: RetrieveRequest, memory: MemoryRecordModel) -> tuple[floa
         "role_type": type_weights[MemoryType(memory.memory_type)] * 0.12,
         "keyword": _keyword_score(req.query, memory) * 0.08,
     }
+    if embedding_score:
+        parts["embedding"] = embedding_score * EMBEDDING_SCORE_WEIGHT
     return sum(parts.values()), parts
 
 
@@ -114,7 +123,12 @@ def _governance_warnings(memory: MemoryRecordModel, relations: list[MemoryRelati
     return warnings
 
 
-def retrieve_memories(db: Session, req: RetrieveRequest) -> tuple[list[MemoryRecordModel], RetrievalTraceModel]:
+def retrieve_memories(
+    db: Session,
+    req: RetrieveRequest,
+    *,
+    embedding_scores: dict[str, float] | None = None,
+) -> tuple[list[MemoryRecordModel], RetrievalTraceModel]:
     allowed = [scope.value for scope in req.allowed_scopes]
     stmt = (
         select(MemoryRecordModel)
@@ -151,7 +165,11 @@ def retrieve_memories(db: Session, req: RetrieveRequest) -> tuple[list[MemoryRec
             if reason and reason not in reasons:
                 reasons.append(reason)
             continue
-        score, parts = _score_memory(req, memory)
+        score, parts = _score_memory(
+            req,
+            memory,
+            embedding_score=(embedding_scores or {}).get(memory.memory_id, 0.0),
+        )
         warnings = _governance_warnings(memory, relations)
         if warnings:
             governance_seen = True

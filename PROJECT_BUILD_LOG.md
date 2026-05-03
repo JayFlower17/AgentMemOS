@@ -302,6 +302,24 @@ Verification:
 - `python -m py_compile agentmemos/services.py agentmemos/main.py`: passed.
 - `pytest -q`: 36 passed.
 
+### Add embedding/vector retrieval boundary
+
+- Added `agentmemos/vector.py`.
+- Introduced vector interfaces and local implementations:
+  - `EmbeddingProvider`
+  - `VectorStore`
+  - `HashingEmbeddingProvider`
+  - `InMemoryVectorStore`
+- Added vector utility functions for tokenization, cosine similarity, and memory embedding text.
+- Retrieval scoring now accepts optional embedding scores.
+- Embedding score weight is currently `0.0`, so existing lexical retrieval behavior remains unchanged.
+- Added vector tests and retrieval scoring boundary coverage.
+
+Verification:
+
+- `python -m py_compile agentmemos/vector.py agentmemos/retrieval.py`: passed.
+- `pytest -q`: 40 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -324,14 +342,15 @@ Verification:
 - Dedicated governance service module.
 - Repository boundary for event, memory, trace, and governance persistence access.
 - Service-layer orchestration for event ingestion, memory lifecycle, and relation resolution.
+- Embedding/vector retrieval boundary with default lexical retrieval preserved.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
 
 ## Known Gaps
 
-- Extraction is now structured and auditable, but still rule-based; LLM/embedding-assisted extraction is pending.
-- Relation suggestions use lexical heuristics, not embeddings or LLM judgment.
+- Extraction is now structured and auditable, but still rule-based; LLM-assisted extraction is pending.
+- Relation suggestions and retrieval still use lexical heuristics by default; embedding/vector interfaces exist but are not yet active in API retrieval.
 - Governance and extraction now use a typed in-process job queue boundary, but no Redis/distributed queue implementation yet.
 - SQLite remains the default local store behind thin repositories; Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
@@ -342,7 +361,7 @@ Verification:
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Prepare embedding/vector retrieval boundaries without replacing current lexical retrieval.
+1. Add an optional embedding indexing job behind the existing `JobQueue`.
 2. Keep SQLite repositories and in-process workers as the default implementation.
 3. Add optional Redis queue implementation behind the existing `JobQueue` interface.
 4. Add SDK or agent-framework adapters on top of the service layer.

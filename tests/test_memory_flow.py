@@ -3,6 +3,8 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from agentmemos.main import app
+from agentmemos.retrieval import EMBEDDING_SCORE_WEIGHT, _score_memory
+from agentmemos.schemas import RetrieveRequest
 
 
 def test_event_to_retrieval_trace_flow():
@@ -478,3 +480,37 @@ def test_governance_run_accepts_duplicate_suggestions_and_records_summary():
         action_types = {action["action_type"] for action in actions}
         assert "governance_pass" in action_types
         assert "governance_pass_accept_duplicate" in action_types
+
+
+def test_retrieval_scoring_accepts_optional_embedding_score_without_changing_default_weight():
+    with TestClient(app) as client:
+        memory_response = client.post(
+            "/memories",
+            json={
+                "task_id": "task_embedding_score_boundary",
+                "agent_id": "reviewer_1",
+                "memory_type": "episodic",
+                "scope": "team-shared",
+                "content": "Retry policy requires bounded backoff before approval.",
+            },
+        )
+        assert memory_response.status_code == 201
+        memory = memory_response.json()
+
+        req = RetrieveRequest(
+            task_id="task_embedding_score_boundary",
+            agent_id="coder_1",
+            agent_role="coder",
+            query="bounded retry",
+            allowed_scopes=["team-shared"],
+        )
+        from agentmemos.models import MemoryRecordModel
+
+        model = MemoryRecordModel(**memory)
+        score_without_embedding, parts_without_embedding = _score_memory(req, model)
+        score_with_embedding, parts_with_embedding = _score_memory(req, model, embedding_score=0.99)
+
+    assert EMBEDDING_SCORE_WEIGHT == 0.0
+    assert score_with_embedding == score_without_embedding
+    assert parts_with_embedding["embedding"] == 0.0
+    assert "embedding" not in parts_without_embedding
