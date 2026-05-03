@@ -439,3 +439,42 @@ def test_memory_relation_suggestion_can_be_accepted_with_audit_action():
 
         remaining = client.get(f"/memory-relation-suggestions?task_id={task_id}").json()
         assert suggestion["suggestion_id"] not in {item["suggestion_id"] for item in remaining}
+
+
+def test_governance_run_accepts_duplicate_suggestions_and_records_summary():
+    with TestClient(app) as client:
+        task_id = f"task_governance_run_{uuid4().hex}"
+        payload = {
+            "task_id": task_id,
+            "agent_id": "reviewer_1",
+            "memory_type": "episodic",
+            "scope": "team-shared",
+            "content": "Retry policy requires bounded backoff limits before approval.",
+        }
+        client.post("/memories", json=payload)
+        client.post(
+            "/memories",
+            json={
+                **payload,
+                "agent_id": "reviewer_2",
+                "content": "Retry policy requires bounded backoff limits before approval and release.",
+            },
+        )
+        before = client.get(f"/memory-relation-suggestions?task_id={task_id}").json()
+        assert any(suggestion["relation_type"] == "duplicates" for suggestion in before)
+
+        run_response = client.post(
+            "/governance/run",
+            json={"actor": "governance_agent", "duplicate_confidence_threshold": 0.85, "max_accepts": 1},
+        )
+        assert run_response.status_code == 200
+        summary = run_response.json()
+        assert summary["accepted_suggestions"] == 1
+        assert len(summary["accepted_relation_ids"]) == 1
+        assert summary["action"]["action_type"] == "governance_pass"
+        assert summary["action"]["evidence"]["max_accepts"] == 1
+
+        actions = client.get("/memory-governance-actions?limit=20").json()
+        action_types = {action["action_type"] for action in actions}
+        assert "governance_pass" in action_types
+        assert "governance_pass_accept_duplicate" in action_types

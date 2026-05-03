@@ -46,6 +46,8 @@ from agentmemos.schemas import (
     RetrievalTrace,
     RetrieveRequest,
     RetrieveResponse,
+    RunGovernanceRequest,
+    RunGovernanceResponse,
     UpdateMemoryStatusRequest,
 )
 from agentmemos.serializers import (
@@ -463,6 +465,34 @@ def _create_relation_from_values(
     return relation
 
 
+def _accept_suggestion(
+    db: Session,
+    suggestion: MemoryRelationSuggestion,
+    *,
+    actor: str,
+    reason: str | None = None,
+    action_type: str = "accept_relation_suggestion",
+) -> tuple[MemoryRelationModel, MemoryGovernanceActionModel]:
+    relation = _create_relation_from_values(
+        db,
+        source_memory_id=suggestion.source_memory_id,
+        target_memory_id=suggestion.target_memory_id,
+        relation_type=suggestion.relation_type,
+        reason=reason or suggestion.reason,
+    )
+    db.flush()
+    action = MemoryGovernanceActionModel(
+        action_type=action_type,
+        actor=actor,
+        relation_id=relation.relation_id,
+        suggestion_id=suggestion.suggestion_id,
+        reason=reason or suggestion.suggested_action,
+        evidence=suggestion.model_dump(),
+    )
+    db.add(action)
+    return relation, action
+
+
 @app.post(
     "/memory-relation-suggestions/{suggestion_id}/accept",
     response_model=AcceptMemoryRelationSuggestionResponse,
@@ -478,29 +508,66 @@ def accept_memory_relation_suggestion(
     )
     if suggestion is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Suggestion not found or no longer valid")
-    relation = _create_relation_from_values(
-        db,
-        source_memory_id=suggestion.source_memory_id,
-        target_memory_id=suggestion.target_memory_id,
-        relation_type=suggestion.relation_type,
-        reason=payload.reason or suggestion.reason,
-    )
-    db.flush()
-    action = MemoryGovernanceActionModel(
-        action_type="accept_relation_suggestion",
-        actor=payload.actor,
-        relation_id=relation.relation_id,
-        suggestion_id=suggestion.suggestion_id,
-        reason=payload.reason or suggestion.suggested_action,
-        evidence=suggestion.model_dump(),
-    )
-    db.add(action)
+    relation, action = _accept_suggestion(db, suggestion, actor=payload.actor, reason=payload.reason)
     db.commit()
     db.refresh(relation)
     db.refresh(action)
     return AcceptMemoryRelationSuggestionResponse(
         relation=memory_relation_to_schema(relation),
         action=memory_governance_action_to_schema(action),
+    )
+
+
+@app.post("/governance/run", response_model=RunGovernanceResponse)
+def run_governance_pass(payload: RunGovernanceRequest, db: Session = Depends(get_db)) -> RunGovernanceResponse:
+    suggestions = _all_relation_suggestions(db)
+    duplicate_candidates = [
+        suggestion
+        for suggestion in suggestions
+        if suggestion.relation_type == "duplicates"
+        and suggestion.confidence >= payload.duplicate_confidence_threshold
+    ]
+    conflict_count = sum(1 for suggestion in suggestions if suggestion.relation_type == "conflicts_with")
+    accepted_relation_ids: list[str] = []
+    accepted_suggestion_ids: list[str] = []
+
+    for suggestion in duplicate_candidates[: payload.max_accepts]:
+        relation, _ = _accept_suggestion(
+            db,
+            suggestion,
+            actor=payload.actor,
+            reason="Governance pass accepted high-confidence duplicate suggestion.",
+            action_type="governance_pass_accept_duplicate",
+        )
+        accepted_relation_ids.append(relation.relation_id)
+        accepted_suggestion_ids.append(suggestion.suggestion_id)
+
+    summary_action = MemoryGovernanceActionModel(
+        action_type="governance_pass",
+        actor=payload.actor,
+        relation_id=None,
+        suggestion_id=None,
+        reason="Ran conservative governance pass.",
+        evidence={
+            "inspected_suggestions": len(suggestions),
+            "accepted_suggestions": len(accepted_relation_ids),
+            "skipped_conflicts": conflict_count,
+            "duplicate_confidence_threshold": payload.duplicate_confidence_threshold,
+            "max_accepts": payload.max_accepts,
+            "accepted_suggestion_ids": accepted_suggestion_ids,
+            "accepted_relation_ids": accepted_relation_ids,
+        },
+    )
+    db.add(summary_action)
+    db.commit()
+    db.refresh(summary_action)
+
+    return RunGovernanceResponse(
+        inspected_suggestions=len(suggestions),
+        accepted_suggestions=len(accepted_relation_ids),
+        skipped_conflicts=conflict_count,
+        accepted_relation_ids=accepted_relation_ids,
+        action=memory_governance_action_to_schema(summary_action),
     )
 
 

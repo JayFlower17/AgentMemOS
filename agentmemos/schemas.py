@@ -167,6 +167,20 @@ class AcceptMemoryRelationSuggestionResponse(BaseModel):
     action: MemoryGovernanceAction
 
 
+class RunGovernanceRequest(BaseModel):
+    actor: str = Field(default="governance_agent", min_length=1)
+    duplicate_confidence_threshold: float = Field(default=0.85, ge=0, le=1)
+    max_accepts: int = Field(default=10, ge=0, le=100)
+
+
+class RunGovernanceResponse(BaseModel):
+    inspected_suggestions: int
+    accepted_suggestions: int
+    skipped_conflicts: int
+    accepted_relation_ids: list[str] = Field(default_factory=list)
+    action: MemoryGovernanceAction
+
+
 class PromotionDecision(BaseModel):
     decision_id: str
     memory_id: str

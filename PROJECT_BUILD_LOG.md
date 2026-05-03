@@ -178,6 +178,19 @@ Verification:
 - `pytest -q`: 16 passed.
 - Confirmed the script connected to local 8014 and accepted duplicate suggestions.
 
+### Add governance run endpoint
+
+- Added `POST /governance/run`.
+- The endpoint runs a conservative server-side governance pass.
+- It accepts high-confidence duplicate suggestions up to a configurable limit.
+- It skips conflicts and records conflict counts for explicit review.
+- It writes a `governance_pass` summary action.
+
+Verification:
+
+- `python -m py_compile agentmemos/main.py agentmemos/schemas.py`: passed.
+- `pytest -q`: 17 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -194,6 +207,7 @@ Verification:
 - Automatic relation suggestions.
 - Audited acceptance path for governance suggestions.
 - Conservative governance agent example.
+- Server-side governance pass endpoint.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
 
 ## Known Gaps
@@ -203,17 +217,17 @@ Verification:
 - No persistent job queue yet.
 - SQLite remains the default local store; Postgres/pgvector integration is still pending.
 - Suggestions are not applied automatically; they require explicit acceptance.
-- Governance agent workflow is still an example script, not a background service.
+- Governance pass is available as an endpoint, but not yet scheduled as a background job.
 - SDK and adapters are still minimal.
 
 ## Next Recommended Step
 
-Promote the governance agent workflow into a service-level capability:
+Promote the governance pass into a scheduled/background capability:
 
-1. Add a backend endpoint or worker job for running a governance pass.
-2. Add configurable thresholds for duplicate acceptance.
+1. Add a lightweight scheduler or queue-backed worker.
+2. Run governance passes on demand or on a configured interval.
 3. Keep conflict resolution explicit and auditable.
-4. Record governance pass summaries.
+4. Add pass history filtering by actor/time.
 
 This would close the loop:
 
