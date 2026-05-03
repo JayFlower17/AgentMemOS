@@ -12,7 +12,13 @@ from agentmemos.governance import run_governance
 from agentmemos.models import AgentEventModel, MemoryDecisionTraceModel, MemoryRecordModel
 from agentmemos.queue import InMemoryJobQueue, JobQueue, JobType, MemoryJob
 from agentmemos.schemas import RunGovernanceRequest
-from agentmemos.vector import EmbeddingProvider, HashingEmbeddingProvider, InMemoryVectorStore, VectorStore, memory_embedding_text
+from agentmemos.vector import (
+    EmbeddingProvider,
+    InMemoryVectorStore,
+    VectorStore,
+    create_embedding_provider,
+    memory_embedding_text,
+)
 
 
 class MemoryWorker:
@@ -24,14 +30,14 @@ class MemoryWorker:
         event_bus: MemoryEventBus | None = None,
         extractor_provider: ExtractorProvider | None = None,
     ) -> None:
+        self.settings = get_settings()
         self.job_queue = job_queue or InMemoryJobQueue()
-        self.embedding_provider = embedding_provider or HashingEmbeddingProvider()
+        self.embedding_provider = embedding_provider or create_embedding_provider(provider=self.settings.embedding_provider)
         self.vector_store = vector_store or InMemoryVectorStore()
         self.event_bus = event_bus
         self.extractor_provider = extractor_provider
         self._task: asyncio.Task | None = None
         self._running = False
-        self.settings = get_settings()
         if self.extractor_provider is None:
             self.extractor_provider = create_extractor_provider(backend=self.settings.extractor_backend)
 

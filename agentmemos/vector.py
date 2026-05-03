@@ -1,6 +1,10 @@
 import math
+import json
+from urllib import request as urlrequest
+from urllib.error import HTTPError, URLError
 from collections import Counter
-from typing import Protocol
+from dataclasses import dataclass
+from typing import Callable, Protocol
 
 from sqlalchemy import select
 
@@ -58,6 +62,52 @@ class HashingEmbeddingProvider:
         if not norm:
             return vector
         return [value / norm for value in vector]
+
+
+@dataclass
+class OpenAIEmbeddingProvider:
+    api_key: str
+    base_url: str = "https://api.openai.com/v1"
+    model: str = "text-embedding-3-small"
+    dimensions: int = 0
+    timeout_seconds: float = 20.0
+    urlopen: Callable | None = None
+
+    def embed(self, text: str) -> list[float]:
+        if not self.api_key:
+            raise RuntimeError("OpenAI embedding provider requires an API key.")
+        payload: dict[str, object] = {"model": self.model, "input": text}
+        if self.dimensions:
+            payload["dimensions"] = self.dimensions
+        body = json.dumps(payload).encode("utf-8")
+        req = urlrequest.Request(
+            self._endpoint(),
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            opener = self.urlopen or urlrequest.urlopen
+            with opener(req, timeout=self.timeout_seconds) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"OpenAI embedding request failed with HTTP {exc.code}: {detail}") from exc
+        except (OSError, URLError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"OpenAI embedding request failed: {exc}") from exc
+        try:
+            embedding = data["data"][0]["embedding"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError("OpenAI embedding response did not include data[0].embedding.") from exc
+        if not isinstance(embedding, list) or not all(isinstance(value, int | float) for value in embedding):
+            raise RuntimeError("OpenAI embedding response returned an invalid embedding vector.")
+        return [float(value) for value in embedding]
+
+    def _endpoint(self) -> str:
+        return f"{self.base_url.rstrip('/')}/embeddings"
 
 
 class InMemoryVectorStore:
@@ -238,15 +288,32 @@ def create_vector_store(*, backend: str = "memory") -> VectorStore:
     if backend == "memory":
         return InMemoryVectorStore()
     if backend == "sqlite":
-        return SqliteVectorStore()
+        settings = get_settings()
+        return SqliteVectorStore(provider=settings.embedding_provider)
     if backend == "pgvector":
         settings = get_settings()
         return PgVectorStore(
             database_url=settings.pgvector_url,
             table_name=settings.pgvector_table_name,
             dimensions=settings.pgvector_dimensions,
+            provider=settings.embedding_provider,
         )
     raise ValueError(f"Unsupported vector store backend: {backend}")
+
+
+def create_embedding_provider(*, provider: str = "hashing") -> EmbeddingProvider:
+    settings = get_settings()
+    if provider == "hashing":
+        return HashingEmbeddingProvider(dimensions=settings.pgvector_dimensions)
+    if provider == "openai":
+        return OpenAIEmbeddingProvider(
+            api_key=settings.openai_embedding_api_key,
+            base_url=settings.openai_embedding_base_url,
+            model=settings.openai_embedding_model,
+            dimensions=settings.openai_embedding_dimensions,
+            timeout_seconds=settings.openai_embedding_timeout_seconds,
+        )
+    raise ValueError(f"Unsupported embedding provider: {provider}")
 
 
 def memory_embedding_text(memory: MemoryRecordModel) -> str:

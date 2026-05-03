@@ -336,6 +336,41 @@ docker compose -f docker-compose.redis.yml down
 ## Pgvector Storage
 
 Local vector retrieval defaults to in-memory or SQLite-backed embeddings.
+The default embedding provider is local hashing, which needs no API key:
+
+```powershell
+$env:AGENTMEMOS_EMBEDDING_PROVIDER="hashing"
+```
+
+OpenAI-compatible embedding APIs can be enabled without changing the worker or retrieval code:
+
+```powershell
+$env:AGENTMEMOS_EMBEDDING_PROVIDER="openai"
+$env:AGENTMEMOS_OPENAI_EMBEDDING_API_KEY="..."
+$env:AGENTMEMOS_OPENAI_EMBEDDING_BASE_URL="https://api.openai.com/v1"
+$env:AGENTMEMOS_OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
+```
+
+For a labeled key file, set the label explicitly:
+
+```powershell
+$env:AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_FILE="C:\path\to\LLM-API-KEY.txt"
+$env:AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_LABEL="Embedding"
+```
+
+For the local third-party OpenAI-compatible provider used during development:
+
+```powershell
+$env:AGENTMEMOS_EMBEDDING_PROVIDER="openai"
+$env:AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_FILE="$HOME\Desktop\LLM-API-KEY.txt"
+$env:AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_LABEL="Embedding"
+$env:AGENTMEMOS_OPENAI_EMBEDDING_BASE_URL="https://api.jiekou.ai/openai"
+$env:AGENTMEMOS_OPENAI_EMBEDDING_MODEL="text-embedding-3-large"
+python examples/openai_embedding_smoke.py
+```
+
+If pgvector is used with external embeddings, `AGENTMEMOS_PGVECTOR_DIMENSIONS` must match the embedding dimensions returned by the provider. For native `text-embedding-3-large` embeddings this is usually `3072`; if the provider supports a custom dimensions parameter, set `AGENTMEMOS_OPENAI_EMBEDDING_DIMENSIONS` and use the same value for pgvector.
+
 For Postgres/pgvector validation, start pgvector locally:
 
 ```powershell

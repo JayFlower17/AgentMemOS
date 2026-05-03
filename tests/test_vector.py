@@ -1,10 +1,13 @@
 from agentmemos.database import init_db
+from agentmemos.config import get_settings
 from agentmemos.vector import (
     HashingEmbeddingProvider,
     InMemoryVectorStore,
+    OpenAIEmbeddingProvider,
     SqliteVectorStore,
     PgVectorStore,
     cosine_similarity,
+    create_embedding_provider,
     create_vector_store,
     tokenize,
 )
@@ -64,6 +67,76 @@ def test_sqlite_vector_store_persists_embeddings_across_instances():
 def test_create_vector_store_defaults_to_memory_and_supports_sqlite():
     assert isinstance(create_vector_store(), InMemoryVectorStore)
     assert isinstance(create_vector_store(backend="sqlite"), SqliteVectorStore)
+
+
+class FakeEmbeddingResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def read(self):
+        return b'{"data":[{"embedding":[0.1,0.2,0.3]}]}'
+
+
+def test_openai_embedding_provider_posts_to_embeddings_endpoint():
+    calls = []
+
+    def fake_urlopen(req, timeout):
+        calls.append((req, timeout))
+        return FakeEmbeddingResponse()
+
+    provider = OpenAIEmbeddingProvider(
+        api_key="test-key",
+        base_url="https://api.example.com/openai",
+        model="text-embedding-3-large",
+        dimensions=3,
+        timeout_seconds=7,
+        urlopen=fake_urlopen,
+    )
+
+    embedding = provider.embed("retry bounded backoff")
+
+    assert embedding == [0.1, 0.2, 0.3]
+    req, timeout = calls[0]
+    assert req.full_url == "https://api.example.com/openai/embeddings"
+    assert timeout == 7
+    assert req.headers["Authorization"] == "Bearer test-key"
+    assert b'"model": "text-embedding-3-large"' in req.data
+    assert b'"dimensions": 3' in req.data
+
+
+def test_openai_embedding_provider_requires_key():
+    provider = OpenAIEmbeddingProvider(api_key="")
+
+    try:
+        provider.embed("retry bounded backoff")
+    except RuntimeError as exc:
+        assert "requires an API key" in str(exc)
+    else:
+        raise AssertionError("Expected missing API key error")
+
+
+def test_create_embedding_provider_reads_labeled_embedding_key_file(tmp_path, monkeypatch):
+    key_file = tmp_path / "keys.txt"
+    key_file.write_text("DeepSeek: chat-secret\nEmbedding: embedding-secret\n", encoding="utf-8")
+    monkeypatch.setenv("AGENTMEMOS_EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setenv("AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_FILE", str(key_file))
+    monkeypatch.setenv("AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_LABEL", "Embedding")
+    monkeypatch.setenv("AGENTMEMOS_OPENAI_EMBEDDING_BASE_URL", "https://api.example.com/openai")
+    monkeypatch.setenv("AGENTMEMOS_OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+    monkeypatch.setenv("AGENTMEMOS_OPENAI_EMBEDDING_DIMENSIONS", "3")
+    get_settings.cache_clear()
+
+    provider = create_embedding_provider(provider="openai")
+
+    assert isinstance(provider, OpenAIEmbeddingProvider)
+    assert provider.api_key == "embedding-secret"
+    assert provider.base_url == "https://api.example.com/openai"
+    assert provider.model == "text-embedding-3-large"
+    assert provider.dimensions == 3
+    get_settings.cache_clear()
 
 
 class FakeCursor:

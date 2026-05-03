@@ -780,6 +780,34 @@ Verification:
 - `python -m compileall -q agentmemos examples`: passed.
 - `pytest -q`: 88 passed.
 
+### Add OpenAI-compatible embedding provider
+
+- Added configurable embedding provider selection:
+  - `AGENTMEMOS_EMBEDDING_PROVIDER=hashing|openai`
+  - `AGENTMEMOS_OPENAI_EMBEDDING_API_KEY`
+  - `AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_FILE`
+  - `AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_LABEL`
+  - `AGENTMEMOS_OPENAI_EMBEDDING_BASE_URL`
+  - `AGENTMEMOS_OPENAI_EMBEDDING_MODEL`
+  - `AGENTMEMOS_OPENAI_EMBEDDING_DIMENSIONS`
+  - `AGENTMEMOS_OPENAI_EMBEDDING_TIMEOUT_SECONDS`
+- Added `OpenAIEmbeddingProvider` for OpenAI-compatible `/embeddings` APIs.
+- Kept local hashing embeddings as the default zero-config provider.
+- Updated vector store metadata so SQLite and pgvector record the active embedding provider.
+- Added `examples/openai_embedding_smoke.py` for local third-party embedding validation without committing secrets.
+- Documented key-file labels and pgvector dimension compatibility.
+
+Verification:
+
+- `python -m py_compile agentmemos/vector.py agentmemos/config.py agentmemos/worker.py examples/openai_embedding_smoke.py`: passed.
+- `pytest -q tests/test_vector.py`: 11 passed.
+- `pytest -q`: 91 passed.
+- First local smoke exposed missing repo-root import path in `examples/openai_embedding_smoke.py`; fixed.
+- `python examples/openai_embedding_smoke.py`: passed against the local third-party OpenAI-compatible embedding provider using the desktop labeled key file.
+  - Base URL: `https://api.jiekou.ai/openai`.
+  - Model: `text-embedding-3-large`.
+  - Returned dimensions: `3072`.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -811,6 +839,7 @@ Verification:
 - Redis pub/sub backed SSE fanout validated with real Redis E2E smoke test.
 - Durable SQLite vector store option with in-memory default preserved.
 - Optional Postgres/pgvector vector store for production-style shared vector indexes.
+- Optional OpenAI-compatible embedding provider for production-style semantic vectors.
 - Expanded Python SDK client for external agent and adapter integration.
 - LangGraph-style adapter for graph/node state workflows.
 - MCP-ready tool registry, route mapping, dispatcher, lightweight JSON-RPC binding, optional official FastMCP runtime, and client configuration examples.
@@ -823,8 +852,7 @@ Verification:
 
 ## Known Gaps
 
-- Extraction is provider-based and auditable, but only the rule-based provider exists; LLM-assisted extraction is pending.
-- Relation suggestions and retrieval still use lexical heuristics by default; vector-assisted retrieval can use memory, SQLite, or optional pgvector storage.
+- Relation suggestions still use lexical heuristics by default; vector-assisted retrieval can use memory, SQLite, or optional pgvector storage.
 - Governance, extraction, and embedding indexing use a typed job queue; Redis adapter supports status counters and dead letters, with Docker Compose available for local validation.
 - SQLite remains the default local store behind thin repositories; pgvector exists for vector indexes, while full Postgres primary persistence is still pending.
 - Suggestions are not applied automatically; they require explicit acceptance.
@@ -837,10 +865,10 @@ Verification:
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add optional LLM-assisted extractor provider.
-2. Add optional external embedding provider.
-3. Validate MCP configuration inside specific external client UIs when needed.
-4. Add authentication and tenant boundaries before any shared deployment.
+1. Validate an end-to-end pgvector run with external embeddings enabled.
+2. Validate MCP configuration inside specific external client UIs when needed.
+3. Add authentication and tenant boundaries before any shared deployment.
+4. Add deployment and observability documentation for Redis worker, SSE fanout, pgvector, and external model providers.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 

@@ -59,7 +59,13 @@ class Settings(BaseModel):
     redis_event_channel: str = "agentmemos:events"
     vector_retrieval_enabled: bool = False
     vector_retrieval_weight: float = Field(default=0.0, ge=0, le=1)
+    embedding_provider: str = Field(default="hashing", pattern="^(hashing|openai)$")
     vector_store_backend: str = Field(default="memory", pattern="^(memory|sqlite|pgvector)$")
+    openai_embedding_api_key: str = ""
+    openai_embedding_base_url: str = "https://api.openai.com/v1"
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_dimensions: int = Field(default=0, ge=0, le=4096)
+    openai_embedding_timeout_seconds: float = Field(default=20.0, ge=1, le=120)
     pgvector_url: str = "postgresql://agentmemos:agentmemos@localhost:5432/agentmemos"
     pgvector_table_name: str = "memory_embeddings"
     pgvector_dimensions: int = Field(default=64, ge=1, le=4096)
@@ -96,7 +102,29 @@ def get_settings() -> Settings:
         redis_event_channel=os.getenv("AGENTMEMOS_REDIS_EVENT_CHANNEL", "agentmemos:events"),
         vector_retrieval_enabled=env_bool("AGENTMEMOS_VECTOR_RETRIEVAL_ENABLED", False),
         vector_retrieval_weight=float(os.getenv("AGENTMEMOS_VECTOR_RETRIEVAL_WEIGHT", "0")),
+        embedding_provider=os.getenv("AGENTMEMOS_EMBEDDING_PROVIDER", "hashing"),
         vector_store_backend=os.getenv("AGENTMEMOS_VECTOR_STORE_BACKEND", "memory"),
+        openai_embedding_api_key=(
+            env_secret(
+                "AGENTMEMOS_OPENAI_EMBEDDING_API_KEY",
+                "AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_FILE",
+                "AGENTMEMOS_OPENAI_EMBEDDING_API_KEY_LABEL",
+            )
+            or env_secret("OPENAI_EMBEDDING_API_KEY", "OPENAI_EMBEDDING_API_KEY_FILE", "OPENAI_EMBEDDING_API_KEY_LABEL")
+            or env_secret(
+                "AGENTMEMOS_OPENAI_API_KEY",
+                "AGENTMEMOS_OPENAI_API_KEY_FILE",
+                "AGENTMEMOS_OPENAI_API_KEY_LABEL",
+            )
+            or env_secret("OPENAI_API_KEY", "OPENAI_API_KEY_FILE", "OPENAI_API_KEY_LABEL")
+        ),
+        openai_embedding_base_url=os.getenv(
+            "AGENTMEMOS_OPENAI_EMBEDDING_BASE_URL",
+            os.getenv("AGENTMEMOS_OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        ),
+        openai_embedding_model=os.getenv("AGENTMEMOS_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        openai_embedding_dimensions=int(os.getenv("AGENTMEMOS_OPENAI_EMBEDDING_DIMENSIONS", "0")),
+        openai_embedding_timeout_seconds=float(os.getenv("AGENTMEMOS_OPENAI_EMBEDDING_TIMEOUT_SECONDS", "20")),
         pgvector_url=os.getenv(
             "AGENTMEMOS_PGVECTOR_URL",
             "postgresql://agentmemos:agentmemos@localhost:5432/agentmemos",
