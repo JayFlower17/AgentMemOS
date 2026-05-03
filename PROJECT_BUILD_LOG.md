@@ -203,6 +203,18 @@ Verification:
 - `python -m py_compile agentmemos/main.py agentmemos/governance.py`: passed.
 - `pytest -q`: 19 passed.
 
+### Harden SQLite schema compatibility
+
+- Replaced one-off retrieval trace column patching with a general SQLite schema ensure path.
+- Added known-column compatibility checks for retrieval traces, memory relations, and governance actions.
+- Added a database schema regression test for adding a missing known column.
+
+Verification:
+
+- `python -m py_compile agentmemos/database.py`: passed.
+- `pytest -q tests/test_database_schema.py`: 1 passed.
+- `pytest -q`: 20 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -221,6 +233,7 @@ Verification:
 - Conservative governance agent example.
 - Server-side governance pass endpoint.
 - Dedicated governance service module.
+- SQLite schema compatibility guard for local MVP evolution.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
 
 ## Known Gaps
@@ -228,7 +241,7 @@ Verification:
 - Extraction is still rule-based and MVP-level.
 - Relation suggestions use lexical heuristics, not embeddings or LLM judgment.
 - No persistent job queue yet.
-- SQLite remains the default local store; Postgres/pgvector integration is still pending.
+- SQLite remains the default local store; Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance pass is available as an endpoint, but not yet scheduled as a background job.
 - SDK and adapters are still minimal.

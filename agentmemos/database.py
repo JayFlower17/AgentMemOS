@@ -24,22 +24,35 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     if settings.database_url.startswith("sqlite"):
-        _ensure_sqlite_trace_columns()
+        _ensure_sqlite_schema()
 
 
-def _ensure_sqlite_trace_columns() -> None:
+def _ensure_sqlite_schema() -> None:
     inspector = inspect(engine)
-    if "retrieval_traces" not in inspector.get_table_names():
-        return
-    columns = {column["name"] for column in inspector.get_columns("retrieval_traces")}
-    missing_columns = {
-        "scored_memories": "JSON DEFAULT '[]'",
-        "filter_reasons": "JSON DEFAULT '{}'",
+    existing_tables = set(inspector.get_table_names())
+    table_columns = {
+        "retrieval_traces": {
+            "scored_memories": "JSON DEFAULT '[]'",
+            "filter_reasons": "JSON DEFAULT '{}'",
+        },
+        "memory_relations": {
+            "status": "VARCHAR(32) DEFAULT 'open'",
+            "resolved_at": "DATETIME",
+        },
+        "memory_governance_actions": {
+            "relation_id": "VARCHAR(64)",
+            "suggestion_id": "VARCHAR(64)",
+            "evidence": "JSON DEFAULT '{}'",
+        },
     }
     with engine.begin() as connection:
-        for column_name, column_type in missing_columns.items():
-            if column_name not in columns:
-                connection.execute(text(f"ALTER TABLE retrieval_traces ADD COLUMN {column_name} {column_type}"))
+        for table_name, missing_columns in table_columns.items():
+            if table_name not in existing_tables:
+                continue
+            columns = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, column_type in missing_columns.items():
+                if column_name not in columns:
+                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
 
 
 def get_db() -> Generator[Session, None, None]:
