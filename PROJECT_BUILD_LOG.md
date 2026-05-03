@@ -191,6 +191,18 @@ Verification:
 - `python -m py_compile agentmemos/main.py agentmemos/schemas.py`: passed.
 - `pytest -q`: 17 passed.
 
+### Refactor governance logic into service module
+
+- Added `agentmemos/governance.py`.
+- Moved memory insights, relation suggestions, suggestion acceptance, and governance pass logic out of `main.py`.
+- Kept `main.py` focused on API routing and response assembly.
+- Preserved endpoint behavior while making governance logic easier to test and evolve.
+
+Verification:
+
+- `python -m py_compile agentmemos/main.py agentmemos/governance.py`: passed.
+- `pytest -q`: 19 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -208,6 +220,7 @@ Verification:
 - Audited acceptance path for governance suggestions.
 - Conservative governance agent example.
 - Server-side governance pass endpoint.
+- Dedicated governance service module.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
 
 ## Known Gaps
