@@ -424,6 +424,27 @@ Verification:
 - `python -m py_compile agentmemos/adapters.py examples/adapter_usage.py`: passed.
 - `pytest -q`: 56 passed.
 
+### Add MCP tool integration layer
+
+- Added MCP-ready tool definitions for core AgentMemOS operations:
+  - emit event
+  - retrieve memories
+  - create memory
+  - list memories
+  - list governance insights
+  - run governance pass
+- Added `AgentMemOSMCPToolbox` as a runtime-neutral dispatcher backed by the Python SDK.
+- Added `AgentMemOSMCPServer`, a small JSON-RPC binding for initialize, ping, tools/list, and tools/call.
+- Kept the integration free of a hard MCP SDK dependency so the current local service remains lightweight.
+- Added `build_default_toolbox()` with the project dev server default `http://127.0.0.1:8014`.
+- Added example scripts showing direct toolbox usage and a stdio-style JSON-RPC server entrypoint.
+- Added unit tests for schema listing, SDK dispatch, argument coercion, server request handling, and error handling.
+
+Verification:
+
+- `python -m py_compile agentmemos/mcp_tools.py agentmemos/mcp_server.py examples/mcp_tool_usage.py examples/mcp_stdio_server.py agentmemos/__init__.py`: passed.
+- `pytest -q`: 63 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -453,6 +474,7 @@ Verification:
 - Durable SQLite vector store option with in-memory default preserved.
 - Expanded Python SDK client for external agent and adapter integration.
 - LangGraph-style adapter for graph/node state workflows.
+- MCP-ready tool registry, dispatcher, and lightweight JSON-RPC server binding.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -465,13 +487,14 @@ Verification:
 - SQLite remains the default local store behind thin repositories; local durable vector storage exists, while Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
-- SDK covers core APIs; LangGraph-style adapter exists, while MCP/OpenAI Agents/AutoGen/CrewAI adapters are still pending.
+- SDK covers core APIs; LangGraph-style adapter and MCP-ready tool layer exist, while OpenAI Agents/AutoGen/CrewAI adapters are still pending.
+- MCP integration currently provides tool definitions, dispatch handlers, and a lightweight JSON-RPC binding; a full MCP SDK/transport runtime is still pending.
 
 ## Next Recommended Step
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add MCP tool/server integration for agent tool access.
+1. Bind the MCP tool layer to the official MCP SDK runtime when adding production transport support.
 2. Prepare pgvector storage for shared production vector indexes.
 3. Add SSE integration for realtime memory/governance updates.
 4. Add operational documentation for Redis and SQLite vector store configuration.
