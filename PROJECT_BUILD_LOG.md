@@ -735,6 +735,51 @@ Verification:
 - `python -m compileall -q agentmemos examples`: passed.
 - `pytest -q`: 83 passed.
 
+### Add OpenAI-compatible LLM extractor provider
+
+- Added `OpenAIChatExtractor`.
+- Supports OpenAI-compatible chat completions APIs through:
+  - `AGENTMEMOS_OPENAI_API_KEY`
+  - `OPENAI_API_KEY`
+  - `AGENTMEMOS_OPENAI_BASE_URL`
+  - `AGENTMEMOS_OPENAI_EXTRACTOR_MODEL`
+  - `AGENTMEMOS_OPENAI_EXTRACTOR_TIMEOUT_SECONDS`
+- Extended `AGENTMEMOS_EXTRACTOR_BACKEND` to support `openai`.
+- LLM extractor asks for strict JSON with:
+  - `should_write`
+  - `memory_type`
+  - `scope`
+  - `content`
+  - `summary`
+  - `confidence`
+  - `importance`
+  - `reason`
+  - `signals`
+- Added fallback behavior:
+  - missing API key falls back to rule extractor
+  - failed LLM call falls back to rule extractor
+  - fallback reason is recorded in extraction signals
+- Added `examples/openai_extractor_smoke.py` for local OpenAI-compatible/DeepSeek testing without committing any key.
+- Updated README with OpenAI-compatible and DeepSeek configuration examples.
+- Added unit tests for:
+  - successful structured LLM extraction
+  - LLM declining memory writes
+  - fallback to rule extractor on LLM failure
+
+Verification:
+
+- `python -m py_compile agentmemos/extractor.py agentmemos/config.py examples/openai_extractor_smoke.py`: passed.
+- `pytest -q tests/test_extractor.py`: 12 passed.
+- First real DeepSeek smoke exposed multi-provider key-file parsing and error redaction needs; fixed with labeled key-file parsing and secret redaction.
+- Second real DeepSeek smoke exposed fragile shell env propagation; fixed `examples/openai_extractor_smoke.py` to infer DeepSeek defaults from the local labeled key file when no explicit env is set.
+- `python examples/openai_extractor_smoke.py`: passed against DeepSeek using local key file.
+  - Provider: `openai`.
+  - Model: `deepseek-chat`.
+  - Fallback: `False`.
+  - Result: wrote procedural task-local memory.
+- `python -m compileall -q agentmemos examples`: passed.
+- `pytest -q`: 88 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.

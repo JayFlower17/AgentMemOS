@@ -1,5 +1,8 @@
+import json
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Callable, Protocol
+from urllib.error import URLError
+from urllib.request import ProxyHandler, Request, build_opener
 
 from agentmemos.enums import AgentRole, EventType, MemoryScope, MemoryType
 from agentmemos.models import AgentEventModel
@@ -265,9 +268,203 @@ class RuleBasedExtractor:
         )
 
 
+LLMTransport = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+class OpenAIChatExtractor:
+    name = "openai"
+
+    def __init__(
+        self,
+        *,
+        api_key: str = "",
+        base_url: str = "https://api.openai.com/v1",
+        model: str = "gpt-4o-mini",
+        timeout_seconds: float = 20.0,
+        fallback_provider: ExtractorProvider | None = None,
+        transport: LLMTransport | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout_seconds = timeout_seconds
+        self.fallback_provider = fallback_provider or RuleBasedExtractor()
+        self.transport = transport
+
+    def extract(self, event: AgentEventModel) -> ExtractionResult:
+        if not self.api_key and self.transport is None:
+            return self._fallback(event, "OpenAI-compatible extractor is not configured with an API key.")
+        try:
+            raw = self._call_model(event)
+            return self._result_from_model(event, raw)
+        except Exception as exc:
+            return self._fallback(event, f"OpenAI-compatible extractor failed: {_redact_secret(str(exc))}")
+
+    def _call_model(self, event: AgentEventModel) -> dict[str, Any]:
+        payload = {
+            "model": self.model,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are AgentMemOS memory extraction classifier. Return only JSON. "
+                        "Choose whether an agent event should become memory. Use memory_type one of "
+                        "working, episodic, semantic, procedural. Use scope one of agent-local, "
+                        "task-local, team-shared, project-global. Confidence and importance must be 0..1."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "event_id": event.event_id,
+                            "event_type": str(event.event_type),
+                            "task_id": event.task_id,
+                            "agent_id": event.agent_id,
+                            "agent_role": str(event.agent_role),
+                            "content": event.content,
+                            "metadata": event.event_metadata or {},
+                            "required_json_schema": {
+                                "should_write": "boolean",
+                                "memory_type": "working|episodic|semantic|procedural",
+                                "scope": "agent-local|task-local|team-shared|project-global",
+                                "content": "string; usually the original event content unless a tighter memory statement is safer",
+                                "summary": "string",
+                                "confidence": "number 0..1",
+                                "importance": "number 0..1",
+                                "reason": "string",
+                                "signals": "object with concise evidence flags or notes",
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+        }
+        if self.transport is not None:
+            return self.transport(payload)
+
+        request = Request(
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        opener = build_opener(ProxyHandler({}))
+        try:
+            with opener.open(request, timeout=self.timeout_seconds) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except URLError as exc:
+            raise RuntimeError(f"LLM request failed: {exc.reason}") from exc
+
+    def _result_from_model(self, event: AgentEventModel, raw: dict[str, Any]) -> ExtractionResult:
+        content = raw["choices"][0]["message"]["content"]
+        data = _parse_json_object(content)
+        should_write = bool(data.get("should_write"))
+        signals = dict(data.get("signals") or {})
+        signals.update(
+            {
+                "extractor": "openai-compatible-llm-v1",
+                "model": self.model,
+                "fallback": False,
+            }
+        )
+        if not should_write:
+            return ExtractionResult(
+                should_write=False,
+                memory=None,
+                reason=str(data.get("reason") or "LLM extractor decided not to write memory."),
+                signals=signals,
+                provider=self.name,
+            )
+        memory = MemoryCreate(
+            task_id=event.task_id,
+            agent_id=event.agent_id,
+            memory_type=MemoryType(str(data["memory_type"])),
+            scope=MemoryScope(str(data["scope"])),
+            content=str(data.get("content") or event.content),
+            summary=summarize(str(data.get("summary") or event.content)),
+            confidence=_clamp(float(data.get("confidence", 0.75))),
+            importance=_clamp(float(data.get("importance", 0.5))),
+            source_event_id=event.event_id,
+        )
+        signals.update(
+            {
+                "event_type": str(event.event_type),
+                "agent_role": str(event.agent_role),
+                "content_length": len(event.content),
+                "memory_type": str(memory.memory_type),
+                "scope": str(memory.scope),
+            }
+        )
+        return ExtractionResult(
+            should_write=True,
+            memory=memory,
+            reason=str(data.get("reason") or "LLM extractor selected this event for memory."),
+            signals=signals,
+            provider=self.name,
+        )
+
+    def _fallback(self, event: AgentEventModel, reason: str) -> ExtractionResult:
+        result = self.fallback_provider.extract(event)
+        signals = {
+            **result.signals,
+            "extractor": "openai-compatible-llm-v1",
+            "fallback": True,
+            "fallback_extractor": result.provider,
+            "fallback_reason": reason,
+        }
+        return ExtractionResult(
+            should_write=result.should_write,
+            memory=result.memory,
+            reason=f"{result.reason} Fallback note: {reason}",
+            signals=signals,
+            provider=self.name,
+        )
+
+
+def _parse_json_object(content: str) -> dict[str, Any]:
+    cleaned = content.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise ValueError("LLM response did not contain a JSON object")
+    return json.loads(cleaned[start : end + 1])
+
+
+def _redact_secret(message: str) -> str:
+    words = []
+    for word in message.split():
+        if word.startswith(("sk-", "sk_", "Bearer")) or len(word) > 24 and any(ch.isdigit() for ch in word):
+            words.append("[redacted]")
+        else:
+            words.append(word)
+    return " ".join(words)
+
+
 def create_extractor_provider(*, backend: str = "rule") -> ExtractorProvider:
     if backend == "rule":
         return RuleBasedExtractor()
+    if backend == "openai":
+        from agentmemos.config import get_settings
+
+        settings = get_settings()
+        return OpenAIChatExtractor(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            model=settings.openai_extractor_model,
+            timeout_seconds=settings.openai_extractor_timeout_seconds,
+        )
     raise ValueError(f"Unsupported extractor backend: {backend}")
 
 
@@ -276,7 +473,6 @@ def explain_extraction(event: AgentEventModel, memory: MemoryCreate) -> tuple[st
     if result.memory is None:
         return result.reason, result.signals
     return result.reason, build_extraction_signals(event, memory, classify_event_with_signals(event))
-    return decision.reason, signals
 
 
 def extract_memory(event: AgentEventModel) -> MemoryCreate | None:

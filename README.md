@@ -96,6 +96,40 @@ It returns a structured extraction result with:
 
 The provider boundary is designed so an optional LLM extractor can be added later without replacing the local default.
 
+OpenAI-compatible extractor can be enabled with:
+
+```powershell
+$env:AGENTMEMOS_EXTRACTOR_BACKEND="openai"
+$env:AGENTMEMOS_OPENAI_API_KEY="..."
+$env:AGENTMEMOS_OPENAI_BASE_URL="https://api.openai.com/v1"
+$env:AGENTMEMOS_OPENAI_EXTRACTOR_MODEL="gpt-4o-mini"
+```
+
+You can also point to a local key file that is not committed:
+
+```powershell
+$env:AGENTMEMOS_OPENAI_API_KEY_FILE="C:\path\to\LLM-API-KEY.txt"
+```
+
+If the file contains multiple labeled keys, set:
+
+```powershell
+$env:AGENTMEMOS_OPENAI_API_KEY_LABEL="DeepSeek"
+```
+
+For DeepSeek-compatible testing:
+
+```powershell
+$env:AGENTMEMOS_OPENAI_BASE_URL="https://api.deepseek.com/v1"
+$env:AGENTMEMOS_OPENAI_EXTRACTOR_MODEL="deepseek-chat"
+```
+
+Run the extractor smoke test:
+
+```powershell
+python examples/openai_extractor_smoke.py
+```
+
 ## Governance Agent Example
 
 Run the conservative governance agent loop against a running server:

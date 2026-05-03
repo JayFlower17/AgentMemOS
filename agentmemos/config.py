@@ -11,11 +11,44 @@ def env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def _extract_secret(raw: str, label: str = "") -> str:
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if label:
+        prefix = f"{label.casefold()}:"
+        for line in lines:
+            if line.casefold().startswith(prefix):
+                return line.split(":", 1)[1].strip()
+    if len(lines) == 1 and ":" in lines[0]:
+        return lines[0].split(":", 1)[1].strip()
+    if lines:
+        return lines[0].split(":", 1)[-1].strip()
+    return raw.strip()
+
+
+def env_secret(name: str, file_name: str, label_name: str = "") -> str:
+    raw = os.getenv(name)
+    if raw:
+        return raw.strip()
+    path = os.getenv(file_name)
+    if not path:
+        return ""
+    label = os.getenv(label_name, "") if label_name else ""
+    try:
+        with open(path, encoding="utf-8") as secret_file:
+            return _extract_secret(secret_file.read(), label)
+    except OSError:
+        return ""
+
+
 class Settings(BaseModel):
     app_name: str = "AgentMemOS"
     database_url: str = Field(default="sqlite:///./agentmemos.db")
     extraction_delay_seconds: float = 0.0
-    extractor_backend: str = Field(default="rule", pattern="^(rule)$")
+    extractor_backend: str = Field(default="rule", pattern="^(rule|openai)$")
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_extractor_model: str = "gpt-4o-mini"
+    openai_extractor_timeout_seconds: float = Field(default=20.0, ge=1, le=120)
     job_queue_backend: str = Field(default="memory", pattern="^(memory|redis)$")
     api_worker_enabled: bool = True
     job_max_attempts: int = Field(default=3, ge=1, le=20)
@@ -44,6 +77,15 @@ def get_settings() -> Settings:
         database_url=os.getenv("AGENTMEMOS_DATABASE_URL", "sqlite:///./agentmemos.db"),
         extraction_delay_seconds=float(os.getenv("AGENTMEMOS_EXTRACTION_DELAY_SECONDS", "0")),
         extractor_backend=os.getenv("AGENTMEMOS_EXTRACTOR_BACKEND", "rule"),
+        openai_api_key=env_secret(
+            "AGENTMEMOS_OPENAI_API_KEY",
+            "AGENTMEMOS_OPENAI_API_KEY_FILE",
+            "AGENTMEMOS_OPENAI_API_KEY_LABEL",
+        )
+        or env_secret("OPENAI_API_KEY", "OPENAI_API_KEY_FILE", "OPENAI_API_KEY_LABEL"),
+        openai_base_url=os.getenv("AGENTMEMOS_OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        openai_extractor_model=os.getenv("AGENTMEMOS_OPENAI_EXTRACTOR_MODEL", "gpt-4o-mini"),
+        openai_extractor_timeout_seconds=float(os.getenv("AGENTMEMOS_OPENAI_EXTRACTOR_TIMEOUT_SECONDS", "20")),
         job_queue_backend=os.getenv("AGENTMEMOS_JOB_QUEUE_BACKEND", "memory"),
         api_worker_enabled=env_bool("AGENTMEMOS_API_WORKER_ENABLED", True),
         job_max_attempts=int(os.getenv("AGENTMEMOS_JOB_MAX_ATTEMPTS", "3")),
