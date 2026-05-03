@@ -71,6 +71,17 @@ With the server running:
 $env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8010"; python examples/sdk_usage.py
 ```
 
+## Governance Agent Example
+
+Run the conservative governance agent loop against a running server:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/governance_agent.py
+```
+
+The example fetches memory insights and relation suggestions, accepts only high-confidence duplicate suggestions, and leaves conflicts for explicit review.
+By default it accepts at most 10 suggestions per run. Override with `AGENTMEMOS_GOVERNANCE_MAX_ACCEPTS`.
+
 ## Generic Agent Step Adapter
 
 Use the framework-agnostic adapter to wrap any dict-in, dict-out agent step:

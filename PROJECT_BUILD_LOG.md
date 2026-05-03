@@ -164,6 +164,20 @@ Verification:
 
 - `pytest -q`: 16 passed.
 
+### Add governance agent example
+
+- Added `examples/governance_agent.py`.
+- The example fetches `/memory-insights` and `/memory-relation-suggestions`.
+- It accepts only high-confidence duplicate suggestions.
+- The default run is capped by `AGENTMEMOS_GOVERNANCE_MAX_ACCEPTS`.
+- It prints unresolved conflicts for explicit review instead of resolving them automatically.
+
+Verification:
+
+- `python -m py_compile examples/governance_agent.py`: passed.
+- `pytest -q`: 16 passed.
+- Confirmed the script connected to local 8014 and accepted duplicate suggestions.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -179,6 +193,7 @@ Verification:
 - Agent-readable memory insights.
 - Automatic relation suggestions.
 - Audited acceptance path for governance suggestions.
+- Conservative governance agent example.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
 
 ## Known Gaps
@@ -188,18 +203,18 @@ Verification:
 - No persistent job queue yet.
 - SQLite remains the default local store; Postgres/pgvector integration is still pending.
 - Suggestions are not applied automatically; they require explicit acceptance.
-- No dedicated agent workflow for resolving insights.
+- Governance agent workflow is still an example script, not a background service.
 - SDK and adapters are still minimal.
 
 ## Next Recommended Step
 
-Build a dedicated agent workflow for governance insights:
+Promote the governance agent workflow into a service-level capability:
 
-1. Let an agent fetch `/memory-insights`.
-2. Let the agent inspect or accept related `/memory-relation-suggestions`.
-3. Let the agent resolve low-risk duplicate relations after acceptance.
-4. Keep high-risk conflict resolution explicit and auditable.
+1. Add a backend endpoint or worker job for running a governance pass.
+2. Add configurable thresholds for duplicate acceptance.
+3. Keep conflict resolution explicit and auditable.
+4. Record governance pass summaries.
 
 This would close the loop:
 
-`insights -> suggestion review -> accepted relation -> retrieval governance -> resolved action`
+`scheduled governance pass -> accepted duplicate relations -> audited actions -> retrieval governance`
