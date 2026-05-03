@@ -569,6 +569,33 @@ Verification:
 - `pytest -q`: 73 passed.
 - `docker compose -f docker-compose.redis.yml config`: passed.
 
+### Add pgvector storage adapter and local validation path
+
+- Added optional `postgres` dependency extra with `psycopg[binary]`.
+- Added pgvector configuration:
+  - `AGENTMEMOS_VECTOR_STORE_BACKEND=pgvector`
+  - `AGENTMEMOS_PGVECTOR_URL`
+  - `AGENTMEMOS_PGVECTOR_TABLE_NAME`
+  - `AGENTMEMOS_PGVECTOR_DIMENSIONS`
+- Added `PgVectorStore` with:
+  - `CREATE EXTENSION IF NOT EXISTS vector`
+  - vector table creation
+  - HNSW cosine index creation
+  - upsert by `memory_id`
+  - cosine distance search with optional candidate filtering
+- Preserved existing memory and SQLite vector stores as defaults.
+- Added `docker-compose.pgvector.yml` for one-command local pgvector startup.
+- Added `examples/pgvector_smoke_test.py` to validate memory creation, indexing, and retrieval through the running API.
+- Updated README with pgvector startup, configuration, smoke test, and shutdown commands.
+- Added tests for pgvector setup SQL, upsert SQL, search SQL, candidate filtering, and dimension validation.
+
+Verification:
+
+- `python -m py_compile agentmemos/vector.py agentmemos/config.py examples/pgvector_smoke_test.py`: passed.
+- `pytest -q tests/test_vector.py`: 8 passed.
+- `docker compose -f docker-compose.pgvector.yml config`: passed.
+- `pytest -q`: 76 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -598,6 +625,7 @@ Verification:
 - Redis queue operationalization with status counters, dead-letter tracking, retry/backoff, and independent worker entrypoint.
 - Redis local validation compose and smoke test for API plus independent worker flow.
 - Durable SQLite vector store option with in-memory default preserved.
+- Optional Postgres/pgvector vector store for production-style shared vector indexes.
 - Expanded Python SDK client for external agent and adapter integration.
 - LangGraph-style adapter for graph/node state workflows.
 - MCP-ready tool registry, route mapping, dispatcher, lightweight JSON-RPC binding, optional official FastMCP runtime, and client configuration examples.
@@ -609,9 +637,9 @@ Verification:
 ## Known Gaps
 
 - Extraction is now structured and auditable, but still rule-based; LLM-assisted extraction is pending.
-- Relation suggestions and retrieval still use lexical heuristics by default; vector-assisted retrieval can be enabled locally but is not backed by pgvector yet.
+- Relation suggestions and retrieval still use lexical heuristics by default; vector-assisted retrieval can use memory, SQLite, or optional pgvector storage.
 - Governance, extraction, and embedding indexing use a typed job queue; Redis adapter supports status counters and dead letters, with Docker Compose available for local validation.
-- SQLite remains the default local store behind thin repositories; local durable vector storage exists, while Postgres/pgvector integration is still pending for production-like deployments.
+- SQLite remains the default local store behind thin repositories; pgvector exists for vector indexes, while full Postgres primary persistence is still pending.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
 - SDK covers core APIs; LangGraph-style adapter and MCP-ready tool layer exist, while OpenAI Agents/AutoGen/CrewAI adapters are still pending.
@@ -622,10 +650,10 @@ Verification:
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Prepare pgvector storage for shared production vector indexes.
-2. Add Redis pub/sub or equivalent fanout for multi-process SSE.
-3. Validate MCP configuration inside specific external client UIs when needed.
-4. Add CI workflow once the local MVP stabilizes further.
+1. Add Redis pub/sub or equivalent fanout for multi-process SSE.
+2. Validate MCP configuration inside specific external client UIs when needed.
+3. Add CI workflow once the local MVP stabilizes further.
+4. Improve extractor beyond rule-based MVP with an optional LLM extractor boundary.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 

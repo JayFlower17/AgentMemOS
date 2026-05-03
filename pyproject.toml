@@ -24,6 +24,9 @@ dev = [
 redis = [
     "redis>=5",
 ]
+postgres = [
+    "psycopg[binary]>=3",
+]
 mcp = [
     "mcp[cli]>=1.0",
 ]

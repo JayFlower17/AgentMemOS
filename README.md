@@ -259,6 +259,39 @@ Stop Redis when finished:
 docker compose -f docker-compose.redis.yml down
 ```
 
+## Pgvector Storage
+
+Local vector retrieval defaults to in-memory or SQLite-backed embeddings.
+For Postgres/pgvector validation, start pgvector locally:
+
+```powershell
+docker compose -f docker-compose.pgvector.yml up -d
+docker compose -f docker-compose.pgvector.yml ps
+```
+
+Then run AgentMemOS with pgvector enabled:
+
+```powershell
+$env:AGENTMEMOS_VECTOR_STORE_BACKEND="pgvector"
+$env:AGENTMEMOS_PGVECTOR_URL="postgresql://agentmemos:agentmemos@localhost:5432/agentmemos"
+$env:AGENTMEMOS_PGVECTOR_DIMENSIONS="64"
+$env:AGENTMEMOS_VECTOR_RETRIEVAL_ENABLED="true"
+$env:AGENTMEMOS_VECTOR_RETRIEVAL_WEIGHT="0.1"
+python -m uvicorn agentmemos.main:app --host 127.0.0.1 --port 8014
+```
+
+Run a pgvector smoke test:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/pgvector_smoke_test.py
+```
+
+Stop pgvector when finished:
+
+```powershell
+docker compose -f docker-compose.pgvector.yml down
+```
+
 ## Core Endpoints
 
 - `POST /events` ingests an agent runtime event and queues memory extraction.

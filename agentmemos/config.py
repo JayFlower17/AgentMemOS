@@ -23,7 +23,10 @@ class Settings(BaseModel):
     redis_queue_name: str = "agentmemos:jobs"
     vector_retrieval_enabled: bool = False
     vector_retrieval_weight: float = Field(default=0.0, ge=0, le=1)
-    vector_store_backend: str = Field(default="memory", pattern="^(memory|sqlite)$")
+    vector_store_backend: str = Field(default="memory", pattern="^(memory|sqlite|pgvector)$")
+    pgvector_url: str = "postgresql://agentmemos:agentmemos@localhost:5432/agentmemos"
+    pgvector_table_name: str = "memory_embeddings"
+    pgvector_dimensions: int = Field(default=64, ge=1, le=4096)
     governance_scheduler_enabled: bool = False
     governance_scheduler_interval_seconds: float = Field(default=0.0, ge=0)
     governance_scheduler_actor: str = "governance_scheduler"
@@ -46,6 +49,12 @@ def get_settings() -> Settings:
         vector_retrieval_enabled=env_bool("AGENTMEMOS_VECTOR_RETRIEVAL_ENABLED", False),
         vector_retrieval_weight=float(os.getenv("AGENTMEMOS_VECTOR_RETRIEVAL_WEIGHT", "0")),
         vector_store_backend=os.getenv("AGENTMEMOS_VECTOR_STORE_BACKEND", "memory"),
+        pgvector_url=os.getenv(
+            "AGENTMEMOS_PGVECTOR_URL",
+            "postgresql://agentmemos:agentmemos@localhost:5432/agentmemos",
+        ),
+        pgvector_table_name=os.getenv("AGENTMEMOS_PGVECTOR_TABLE_NAME", "memory_embeddings"),
+        pgvector_dimensions=int(os.getenv("AGENTMEMOS_PGVECTOR_DIMENSIONS", "64")),
         governance_scheduler_enabled=env_bool("AGENTMEMOS_GOVERNANCE_SCHEDULER_ENABLED", False),
         governance_scheduler_interval_seconds=float(
             os.getenv("AGENTMEMOS_GOVERNANCE_SCHEDULER_INTERVAL_SECONDS", "0")

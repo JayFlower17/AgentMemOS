@@ -4,6 +4,7 @@ from typing import Protocol
 
 from sqlalchemy import select
 
+from agentmemos.config import get_settings
 from agentmemos.database import SessionLocal
 from agentmemos.models import MemoryEmbeddingModel, MemoryRecordModel
 
@@ -118,11 +119,133 @@ class SqliteVectorStore:
         return dict(ranked[:limit])
 
 
+def _quote_identifier(identifier: str) -> str:
+    if not identifier.replace("_", "").isalnum() or not identifier[0].isalpha():
+        raise ValueError(f"Unsafe SQL identifier: {identifier}")
+    return f'"{identifier}"'
+
+
+def _to_pgvector_literal(embedding: list[float]) -> str:
+    return "[" + ",".join(f"{value:.12g}" for value in embedding) + "]"
+
+
+class PgVectorStore:
+    def __init__(
+        self,
+        *,
+        database_url: str,
+        table_name: str = "memory_embeddings",
+        dimensions: int = 64,
+        provider: str = "hashing",
+        auto_setup: bool = True,
+        connection_factory=None,
+    ) -> None:
+        self.database_url = database_url
+        self.table_name = table_name
+        self.dimensions = dimensions
+        self.provider = provider
+        self.connection_factory = connection_factory or self._default_connection_factory
+        self.table_sql = _quote_identifier(table_name)
+        if auto_setup:
+            self.setup()
+
+    def setup(self) -> None:
+        with self.connection_factory() as conn:
+            with conn.cursor() as cur:
+                cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                cur.execute(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {self.table_sql} (
+                        memory_id TEXT PRIMARY KEY,
+                        provider TEXT NOT NULL,
+                        dimensions INTEGER NOT NULL,
+                        embedding vector({self.dimensions}) NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                    """
+                )
+                cur.execute(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS {self.table_name}_embedding_hnsw_idx
+                    ON {self.table_sql}
+                    USING hnsw (embedding vector_cosine_ops)
+                    """
+                )
+            conn.commit()
+
+    def upsert(self, memory_id: str, embedding: list[float]) -> None:
+        if len(embedding) != self.dimensions:
+            raise ValueError(f"Expected embedding with {self.dimensions} dimensions, got {len(embedding)}")
+        with self.connection_factory() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    INSERT INTO {self.table_sql} (memory_id, provider, dimensions, embedding, updated_at)
+                    VALUES (%s, %s, %s, %s::vector, now())
+                    ON CONFLICT (memory_id)
+                    DO UPDATE SET
+                        provider = EXCLUDED.provider,
+                        dimensions = EXCLUDED.dimensions,
+                        embedding = EXCLUDED.embedding,
+                        updated_at = now()
+                    """,
+                    (memory_id, self.provider, len(embedding), _to_pgvector_literal(embedding)),
+                )
+            conn.commit()
+
+    def search(
+        self,
+        query_embedding: list[float],
+        *,
+        candidate_ids: list[str] | None = None,
+        limit: int = 20,
+    ) -> dict[str, float]:
+        if len(query_embedding) != self.dimensions:
+            raise ValueError(f"Expected query embedding with {self.dimensions} dimensions, got {len(query_embedding)}")
+        query_literal = _to_pgvector_literal(query_embedding)
+        params: list[object] = [query_literal]
+        where_clause = ""
+        if candidate_ids is not None:
+            if not candidate_ids:
+                return {}
+            where_clause = "WHERE memory_id = ANY(%s)"
+            params.append(candidate_ids)
+        params.extend([query_literal, limit])
+        with self.connection_factory() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT memory_id, 1 - (embedding <=> %s::vector) AS score
+                    FROM {self.table_sql}
+                    {where_clause}
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                    """,
+                    params,
+                )
+                rows = cur.fetchall()
+        return {memory_id: float(score) for memory_id, score in rows}
+
+    def _default_connection_factory(self):
+        try:
+            import psycopg
+        except ImportError as exc:
+            raise RuntimeError("PgVectorStore requires installing the optional 'postgres' dependency.") from exc
+        return psycopg.connect(self.database_url)
+
+
 def create_vector_store(*, backend: str = "memory") -> VectorStore:
     if backend == "memory":
         return InMemoryVectorStore()
     if backend == "sqlite":
         return SqliteVectorStore()
+    if backend == "pgvector":
+        settings = get_settings()
+        return PgVectorStore(
+            database_url=settings.pgvector_url,
+            table_name=settings.pgvector_table_name,
+            dimensions=settings.pgvector_dimensions,
+        )
     raise ValueError(f"Unsupported vector store backend: {backend}")
 
 
