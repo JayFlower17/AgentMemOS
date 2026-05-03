@@ -46,11 +46,23 @@ class MemoryWorker:
         await self.enqueue_job(MemoryJob.extract_memory(event_id))
 
     async def enqueue_job(self, job: MemoryJob) -> None:
+        job = job.with_retry_policy(
+            max_attempts=self.settings.job_max_attempts,
+            backoff_seconds=self.settings.job_retry_backoff_seconds,
+        )
         await self.job_queue.enqueue(job)
         self._publish("job.enqueued", {"job_type": job.job_type.value, "payload": job.payload})
 
     async def drain(self) -> None:
         await self.job_queue.join()
+
+    def state(self) -> dict:
+        return {
+            "running": self._running,
+            "queue": self.job_queue.stats(),
+            "max_attempts": self.settings.job_max_attempts,
+            "retry_backoff_seconds": self.settings.job_retry_backoff_seconds,
+        }
 
     async def _run(self) -> None:
         while self._running:
@@ -60,9 +72,17 @@ class MemoryWorker:
                 await self._process_job(job)
                 self._publish("job.completed", {"job_type": job.job_type.value, "payload": job.payload})
             except Exception as exc:
+                retried = await self._handle_failure(job, exc)
                 self._publish(
                     "job.failed",
-                    {"job_type": job.job_type.value, "payload": job.payload, "error": str(exc)},
+                    {
+                        "job_type": job.job_type.value,
+                        "payload": job.payload,
+                        "error": str(exc),
+                        "attempts": job.attempts + 1,
+                        "max_attempts": job.max_attempts,
+                        "will_retry": retried,
+                    },
                 )
             finally:
                 self.job_queue.task_done()
@@ -137,6 +157,35 @@ class MemoryWorker:
     def _publish(self, event_type: str, payload: dict | None = None) -> None:
         if self.event_bus is not None:
             self.event_bus.publish(event_type, payload)
+
+    async def _handle_failure(self, job: MemoryJob, exc: Exception) -> bool:
+        if job.can_retry:
+            retry_job = job.next_attempt()
+            if retry_job.backoff_seconds:
+                await asyncio.sleep(retry_job.backoff_seconds)
+            await self.job_queue.enqueue(retry_job)
+            self._publish(
+                "job.retried",
+                {
+                    "job_type": retry_job.job_type.value,
+                    "payload": retry_job.payload,
+                    "attempts": retry_job.attempts,
+                    "max_attempts": retry_job.max_attempts,
+                },
+            )
+            return True
+        await self.job_queue.fail(job, error=str(exc))
+        self._publish(
+            "job.dead_lettered",
+            {
+                "job_type": job.job_type.value,
+                "payload": job.payload,
+                "attempts": job.attempts + 1,
+                "max_attempts": job.max_attempts,
+                "error": str(exc),
+            },
+        )
+        return False
 
 
 def create_memory(

@@ -47,6 +47,16 @@ def test_memory_job_json_roundtrip_preserves_type_and_payload():
     assert restored == job
 
 
+def test_memory_job_retry_policy_tracks_attempts():
+    job = MemoryJob.extract_memory("evt_retry").with_retry_policy(max_attempts=2, backoff_seconds=0)
+    retry_job = job.next_attempt()
+
+    assert job.can_retry is True
+    assert retry_job.attempts == 1
+    assert retry_job.can_retry is False
+    assert MemoryJob.from_json(retry_job.to_json()) == retry_job
+
+
 def test_create_job_queue_defaults_to_in_memory_queue():
     queue = create_job_queue()
 
@@ -64,9 +74,30 @@ def test_create_job_queue_can_build_redis_queue_when_client_is_available(monkeyp
         def rpush(self, queue_name, value):
             self.queue_name = queue_name
             self.value = value
+            self.lengths = getattr(self, "lengths", {})
+            self.lengths[queue_name] = self.lengths.get(queue_name, 0) + 1
 
         def blpop(self, queue_name):
             return queue_name, MemoryJob.extract_memory("evt_fake").to_json().encode()
+
+        def hincrby(self, key, field, amount):
+            self.hashes = getattr(self, "hashes", {})
+            self.hashes.setdefault(key, {})
+            self.hashes[key][field] = self.hashes[key].get(field, 0) + amount
+
+        def hset(self, key, field, value):
+            self.hashes = getattr(self, "hashes", {})
+            self.hashes.setdefault(key, {})
+            self.hashes[key][field] = value
+
+        def hget(self, key, field):
+            return getattr(self, "hashes", {}).get(key, {}).get(field)
+
+        def hgetall(self, key):
+            return getattr(self, "hashes", {}).get(key, {})
+
+        def llen(self, queue_name):
+            return getattr(self, "lengths", {}).get(queue_name, 0)
 
     import sys
     import types
@@ -83,6 +114,107 @@ def test_create_job_queue_can_build_redis_queue_when_client_is_available(monkeyp
     assert isinstance(queue, RedisJobQueue)
     assert queue.redis_url == "redis://example/0"
     assert queue.queue_name == "agentmemos:test"
+
+
+def test_redis_queue_stats_and_dead_letter_use_operational_keys(monkeypatch):
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, url):
+            return cls()
+
+        def __init__(self):
+            self.lists = {}
+            self.hashes = {}
+
+        def rpush(self, queue_name, value):
+            self.lists.setdefault(queue_name, []).append(value)
+
+        def blpop(self, queue_name):
+            return queue_name, self.lists[queue_name].pop(0).encode()
+
+        def hincrby(self, key, field, amount):
+            self.hashes.setdefault(key, {})
+            self.hashes[key][field] = self.hashes[key].get(field, 0) + amount
+
+        def hset(self, key, field, value):
+            self.hashes.setdefault(key, {})
+            self.hashes[key][field] = value
+
+        def hget(self, key, field):
+            return self.hashes.get(key, {}).get(field)
+
+        def hgetall(self, key):
+            return self.hashes.get(key, {})
+
+        def llen(self, queue_name):
+            return len(self.lists.get(queue_name, []))
+
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "redis", types.SimpleNamespace(Redis=FakeRedis))
+
+    async def run_redis_flow():
+        queue = RedisJobQueue(redis_url="redis://example/0", queue_name="agentmemos:test")
+        job = MemoryJob.extract_memory("evt_redis")
+        await queue.enqueue(job)
+        received = await queue.dequeue()
+        queue.task_done()
+        await queue.fail(received, error="redis boom")
+        return queue.stats()
+
+    stats = asyncio.run(run_redis_flow())
+
+    assert stats["backend"] == "redis"
+    assert stats["queue_name"] == "agentmemos:test"
+    assert stats["enqueued"] == 1
+    assert stats["dequeued"] == 1
+    assert stats["completed"] == 1
+    assert stats["failed"] == 1
+    assert stats["dead_lettered"] == 1
+    assert stats["last_error"] == "redis boom"
+
+
+def test_in_memory_queue_stats_and_failure_dead_letter():
+    async def run_queue():
+        queue = InMemoryJobQueue()
+        job = MemoryJob.extract_memory("evt_failed")
+        await queue.enqueue(job)
+        received = await queue.dequeue()
+        await queue.fail(received, error="boom")
+        queue.task_done()
+        return queue.stats()
+
+    stats = asyncio.run(run_queue())
+
+    assert stats["backend"] == "memory"
+    assert stats["enqueued"] == 1
+    assert stats["dequeued"] == 1
+    assert stats["completed"] == 1
+    assert stats["failed"] == 1
+    assert stats["dead_lettered"] == 1
+    assert stats["last_error"] == "boom"
+
+
+def test_worker_failure_handler_retries_then_dead_letters():
+    async def run_failure_flow():
+        queue = InMemoryJobQueue()
+        worker = MemoryWorker(job_queue=queue)
+        job = MemoryJob.embed_memory("missing").with_retry_policy(max_attempts=2, backoff_seconds=0)
+
+        retried = await worker._handle_failure(job, RuntimeError("first failure"))
+        retry_job = await queue.dequeue()
+        queue.task_done()
+        dead_lettered = await worker._handle_failure(retry_job, RuntimeError("second failure"))
+        return retried, dead_lettered, queue.stats()
+
+    retried, dead_lettered, stats = asyncio.run(run_failure_flow())
+
+    assert retried is True
+    assert dead_lettered is False
+    assert stats["failed"] == 1
+    assert stats["dead_lettered"] == 1
+    assert stats["last_error"] == "second failure"
 
 
 def test_worker_processes_extract_memory_job():
@@ -225,6 +357,20 @@ def test_event_ingestion_enqueues_extract_memory_job():
 
         memories = client.get(f"/memories?task_id={task_id}&limit=200").json()
         assert any(memory["source_event_id"] == event_id for memory in memories)
+
+
+def test_queue_status_endpoint_reports_worker_and_retry_config():
+    with TestClient(app) as client:
+        response = client.get("/queue/status")
+
+        assert response.status_code == 200
+        status = response.json()
+        assert status["backend"] == "memory"
+        assert status["queue_name"] == "memory"
+        assert status["worker_running"] is True
+        assert status["api_worker_enabled"] is True
+        assert status["max_attempts"] >= 1
+        assert "pending" in status
 
 
 def test_worker_processes_governance_pass_job():

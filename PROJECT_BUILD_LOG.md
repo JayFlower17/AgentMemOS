@@ -512,6 +512,41 @@ Verification:
 - `python -m py_compile agentmemos/event_bus.py agentmemos/main.py agentmemos/worker.py agentmemos/services.py examples/sse_watch.py`: passed.
 - `pytest -q`: 68 passed.
 
+### Operationalize Redis queues and independent workers
+
+- Extended `MemoryJob` with retry metadata:
+  - `attempts`
+  - `max_attempts`
+  - `backoff_seconds`
+- Added queue stats to the `JobQueue` boundary.
+- Added in-memory queue counters for:
+  - pending
+  - enqueued
+  - dequeued
+  - completed
+  - failed
+  - dead-lettered
+  - last error
+- Extended `RedisJobQueue` with:
+  - stats hash
+  - dead-letter queue
+  - queue length reporting
+  - failure recording
+- Added worker retry/backoff handling with `job.retried` and `job.dead_lettered` realtime events.
+- Added configurable retry settings:
+  - `AGENTMEMOS_JOB_MAX_ATTEMPTS`
+  - `AGENTMEMOS_JOB_RETRY_BACKOFF_SECONDS`
+- Added `AGENTMEMOS_API_WORKER_ENABLED` to allow API-only mode when running independent workers.
+- Added `agentmemos.worker_app` and package script `agentmemos-worker`.
+- Added `GET /queue/status` for queue depth, worker state, retry config, and dead-letter counters.
+- Updated README with Redis queue, independent worker, retry, and queue status instructions.
+- Added tests for retry serialization, in-memory stats, Redis stats/dead-letter behavior, worker failure handling, and queue status endpoint.
+
+Verification:
+
+- `python -m py_compile agentmemos/queue.py agentmemos/worker.py agentmemos/worker_app.py agentmemos/main.py agentmemos/services.py agentmemos/config.py agentmemos/schemas.py`: passed.
+- `pytest -q`: 73 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -538,6 +573,7 @@ Verification:
 - Embedding indexing job backed by local `InMemoryVectorStore`.
 - Optional vector-assisted retrieval behind disabled-by-default configuration.
 - Optional Redis-backed `JobQueue` adapter with in-memory default preserved.
+- Redis queue operationalization with status counters, dead-letter tracking, retry/backoff, and independent worker entrypoint.
 - Durable SQLite vector store option with in-memory default preserved.
 - Expanded Python SDK client for external agent and adapter integration.
 - LangGraph-style adapter for graph/node state workflows.
@@ -551,19 +587,19 @@ Verification:
 
 - Extraction is now structured and auditable, but still rule-based; LLM-assisted extraction is pending.
 - Relation suggestions and retrieval still use lexical heuristics by default; vector-assisted retrieval can be enabled locally but is not backed by pgvector yet.
-- Governance, extraction, and embedding indexing use a typed job queue; Redis adapter exists but is optional and not the default.
+- Governance, extraction, and embedding indexing use a typed job queue; Redis adapter supports status counters and dead letters, but local development still defaults to in-memory.
 - SQLite remains the default local store behind thin repositories; local durable vector storage exists, while Postgres/pgvector integration is still pending for production-like deployments.
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
 - SDK covers core APIs; LangGraph-style adapter and MCP-ready tool layer exist, while OpenAI Agents/AutoGen/CrewAI adapters are still pending.
 - MCP integration has local client configuration examples, but has not yet been validated inside each external client UI.
-- SSE stream is process-local; it is not yet backed by Redis pub/sub for multi-process deployments.
+- SSE stream is process-local; queue state can use Redis, but realtime fanout is not yet Redis pub/sub backed.
 
 ## Next Recommended Step
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Operationalize Redis queues with independent worker process, retry/backoff, and queue status.
+1. Add Redis smoke test docs or docker compose for local Redis validation.
 2. Prepare pgvector storage for shared production vector indexes.
 3. Add Redis pub/sub or equivalent fanout for multi-process SSE.
 4. Validate MCP configuration inside specific external client UIs when needed.

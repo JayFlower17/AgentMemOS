@@ -16,14 +16,22 @@ class EventIngestionService:
         event_repository: EventRepository,
         job_queue: JobQueue,
         event_bus: MemoryEventBus | None = None,
+        *,
+        job_max_attempts: int = 3,
+        job_retry_backoff_seconds: float = 1.0,
     ) -> None:
         self.event_repository = event_repository
         self.job_queue = job_queue
         self.event_bus = event_bus
+        self.job_max_attempts = job_max_attempts
+        self.job_retry_backoff_seconds = job_retry_backoff_seconds
 
     async def ingest(self, payload: AgentEventCreate) -> AgentEventModel:
         event = self.event_repository.create(payload)
-        job = MemoryJob.extract_memory(event.event_id)
+        job = MemoryJob.extract_memory(event.event_id).with_retry_policy(
+            max_attempts=self.job_max_attempts,
+            backoff_seconds=self.job_retry_backoff_seconds,
+        )
         await self.job_queue.enqueue(job)
         if self.event_bus is not None:
             self.event_bus.publish("job.enqueued", {"job_type": job.job_type.value, "payload": job.payload})

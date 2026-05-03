@@ -192,6 +192,22 @@ class GovernanceSchedulerStatus(BaseModel):
     last_summary: dict[str, Any] | None = None
 
 
+class QueueStatus(BaseModel):
+    backend: str
+    queue_name: str
+    pending: int
+    dead_lettered: int
+    enqueued: int
+    dequeued: int
+    completed: int
+    failed: int
+    last_error: str | None = None
+    worker_running: bool
+    api_worker_enabled: bool
+    max_attempts: int
+    retry_backoff_seconds: float
+
+
 class PromotionDecision(BaseModel):
     decision_id: str
     memory_id: str

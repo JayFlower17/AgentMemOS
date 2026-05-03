@@ -42,6 +42,7 @@ from agentmemos.schemas import (
     MemoryDecisionTrace,
     MemoryGovernanceAction,
     MemoryInsight,
+    QueueStatus,
     MemoryRelation,
     MemoryRelationCreate,
     MemoryRelationResolveRequest,
@@ -84,7 +85,8 @@ async def lifespan(app: FastAPI):
     event_bus = MemoryEventBus()
     event_bus.bind_loop(asyncio.get_running_loop())
     worker = MemoryWorker(job_queue=job_queue, vector_store=vector_store, event_bus=event_bus)
-    await worker.start()
+    if settings.api_worker_enabled:
+        await worker.start()
     governance_scheduler = GovernanceScheduler(job_queue=worker.job_queue)
     await governance_scheduler.start()
     app.state.memory_worker = worker
@@ -94,7 +96,8 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await governance_scheduler.stop()
-        await worker.stop()
+        if settings.api_worker_enabled:
+            await worker.stop()
 
 
 settings = get_settings()
@@ -134,6 +137,8 @@ async def ingest_event(request: Request, payload: AgentEventCreate, db: Session 
         EventRepository(db),
         request.app.state.memory_worker.job_queue,
         request.app.state.event_bus,
+        job_max_attempts=settings.job_max_attempts,
+        job_retry_backoff_seconds=settings.job_retry_backoff_seconds,
     )
     event = await service.ingest(payload)
     request.app.state.event_bus.publish(
@@ -287,6 +292,19 @@ def run_governance_pass(request: Request, payload: RunGovernanceRequest, db: Ses
 @app.get("/governance/scheduler", response_model=GovernanceSchedulerStatus)
 def get_governance_scheduler_status(request: Request) -> GovernanceSchedulerStatus:
     return GovernanceSchedulerStatus(**request.app.state.governance_scheduler.state())
+
+
+@app.get("/queue/status", response_model=QueueStatus)
+def get_queue_status(request: Request) -> QueueStatus:
+    worker = request.app.state.memory_worker
+    queue_stats = worker.job_queue.stats()
+    return QueueStatus(
+        **queue_stats,
+        worker_running=worker.state()["running"],
+        api_worker_enabled=settings.api_worker_enabled,
+        max_attempts=settings.job_max_attempts,
+        retry_backoff_seconds=settings.job_retry_backoff_seconds,
+    )
 
 
 @app.get("/memory-governance-actions", response_model=list[MemoryGovernanceAction])

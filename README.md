@@ -198,10 +198,51 @@ The stream emits events such as:
 - `governance.completed`
 - `governance.suggestion_accepted`
 
+## Queue And Worker Operations
+
+Local development still defaults to an in-process memory queue and an API-owned worker.
+For Redis-backed queue operation:
+
+```powershell
+$env:AGENTMEMOS_JOB_QUEUE_BACKEND="redis"
+$env:AGENTMEMOS_REDIS_URL="redis://localhost:6379/0"
+$env:AGENTMEMOS_REDIS_QUEUE_NAME="agentmemos:jobs"
+python -m uvicorn agentmemos.main:app --host 127.0.0.1 --port 8014
+```
+
+To run workers as an independent process, disable the API-owned worker and start `agentmemos-worker`:
+
+```powershell
+$env:AGENTMEMOS_API_WORKER_ENABLED="false"
+$env:AGENTMEMOS_JOB_QUEUE_BACKEND="redis"
+python -m uvicorn agentmemos.main:app --host 127.0.0.1 --port 8014
+```
+
+In another terminal:
+
+```powershell
+$env:AGENTMEMOS_JOB_QUEUE_BACKEND="redis"
+agentmemos-worker
+```
+
+Retry behavior is configurable:
+
+```powershell
+$env:AGENTMEMOS_JOB_MAX_ATTEMPTS="3"
+$env:AGENTMEMOS_JOB_RETRY_BACKOFF_SECONDS="1"
+```
+
+Inspect queue status:
+
+```text
+GET /queue/status
+```
+
 ## Core Endpoints
 
 - `POST /events` ingests an agent runtime event and queues memory extraction.
 - `GET /events/stream` streams realtime memory, job, and governance events through SSE.
+- `GET /queue/status` returns queue depth, worker state, retry settings, and dead-letter counters.
 - `POST /memories` creates an explicit memory record.
 - `POST /retrieve` returns scoped, role-aware memory context and stores a retrieval trace.
 - `POST /memories/{memory_id}/promote` promotes a memory to a broader scope.
