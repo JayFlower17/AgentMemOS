@@ -1,6 +1,13 @@
 import pytest
 
-from agentmemos import AgentMemOSClient, AgentMemOSMCPError, AgentMemOSMCPServer, AgentMemOSMCPToolbox
+from agentmemos import (
+    AGENTMEMOS_MCP_TOOL_ROUTES,
+    AgentMemOSClient,
+    AgentMemOSMCPError,
+    AgentMemOSMCPServer,
+    AgentMemOSMCPToolbox,
+    describe_mcp_tool_routes,
+)
 from agentmemos.mcp_runtime import _register_fastmcp_tools
 
 
@@ -14,6 +21,18 @@ def test_mcp_toolbox_lists_tool_schemas():
     assert "agentmemos_retrieve" in names
     retrieve = next(tool for tool in tools if tool["name"] == "agentmemos_retrieve")
     assert retrieve["inputSchema"]["required"] == ["task_id", "agent_id", "agent_role", "query"]
+
+
+def test_mcp_tool_route_descriptions_cover_registered_tools():
+    toolbox = AgentMemOSMCPToolbox(client=AgentMemOSClient(transport=lambda *_: {}))
+
+    tool_names = {tool["name"] for tool in toolbox.list_tools()}
+    route_names = set(AGENTMEMOS_MCP_TOOL_ROUTES)
+    descriptions = describe_mcp_tool_routes()
+
+    assert route_names == tool_names
+    assert {item["name"] for item in descriptions} == tool_names
+    assert next(item for item in descriptions if item["name"] == "agentmemos_retrieve")["api_route"] == "POST /retrieve"
 
 
 def test_mcp_retrieve_dispatches_to_sdk():

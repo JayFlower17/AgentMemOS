@@ -1,9 +1,11 @@
 from agentmemos.sdk import AgentMemOSClient, AgentMemOSError
 from agentmemos.mcp_tools import (
     AGENTMEMOS_MCP_TOOLS,
+    AGENTMEMOS_MCP_TOOL_ROUTES,
     AgentMemOSMCPError,
     AgentMemOSMCPToolbox,
     build_default_toolbox,
+    describe_mcp_tool_routes,
 )
 from agentmemos.mcp_server import AgentMemOSMCPServer
 from agentmemos.mcp_runtime import (
@@ -14,6 +16,7 @@ from agentmemos.mcp_runtime import (
 
 __all__ = [
     "AGENTMEMOS_MCP_TOOLS",
+    "AGENTMEMOS_MCP_TOOL_ROUTES",
     "AgentMemOSClient",
     "AgentMemOSError",
     "AgentMemOSMCPError",
@@ -22,6 +25,7 @@ __all__ = [
     "AgentMemOSMCPToolbox",
     "build_default_toolbox",
     "create_fastmcp_server",
+    "describe_mcp_tool_routes",
     "run_fastmcp_server",
     "__version__",
 ]

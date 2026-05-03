@@ -469,6 +469,24 @@ Verification:
 - `python -m py_compile agentmemos/mcp_runtime.py agentmemos/mcp_server.py examples/mcp_fastmcp_server.py agentmemos/__init__.py`: passed.
 - `pytest -q`: 64 passed.
 
+### Add MCP client configuration and smoke test
+
+- Added explicit MCP tool to AgentMemOS API route mapping in code.
+- Added `describe_mcp_tool_routes()` for docs, agent prompts, and future runtime metadata.
+- Added MCP client configuration examples for:
+  - installed package command
+  - source checkout on Windows
+  - lightweight JSON-RPC fallback
+- Added `examples/mcp_smoke_test.py` to run `tools/list` and `tools/call` against the local AgentMemOS service.
+- Updated README with smoke test usage and tool-to-API mapping.
+- Added tests ensuring every registered MCP tool has a route mapping.
+
+Verification:
+
+- `python -m py_compile agentmemos/mcp_tools.py examples/mcp_smoke_test.py agentmemos/__init__.py`: passed.
+- `pytest -q`: 65 passed.
+- `python examples/mcp_smoke_test.py`: passed against `http://127.0.0.1:8014`.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -498,7 +516,7 @@ Verification:
 - Durable SQLite vector store option with in-memory default preserved.
 - Expanded Python SDK client for external agent and adapter integration.
 - LangGraph-style adapter for graph/node state workflows.
-- MCP-ready tool registry, dispatcher, lightweight JSON-RPC binding, and optional official FastMCP runtime.
+- MCP-ready tool registry, route mapping, dispatcher, lightweight JSON-RPC binding, optional official FastMCP runtime, and client configuration examples.
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
@@ -512,16 +530,16 @@ Verification:
 - Suggestions are not applied automatically; they require explicit acceptance.
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
 - SDK covers core APIs; LangGraph-style adapter and MCP-ready tool layer exist, while OpenAI Agents/AutoGen/CrewAI adapters are still pending.
-- MCP integration has an optional FastMCP runtime, but production client configuration examples are still pending.
+- MCP integration has local client configuration examples, but has not yet been validated inside each external client UI.
 
 ## Next Recommended Step
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add MCP client configuration examples for Claude Desktop, Cursor, and other stdio consumers.
+1. Add SSE integration for realtime memory/governance updates.
 2. Prepare pgvector storage for shared production vector indexes.
-3. Add SSE integration for realtime memory/governance updates.
-4. Add operational documentation for Redis and SQLite vector store configuration.
+3. Add operational documentation for Redis and SQLite vector store configuration.
+4. Validate MCP configuration inside specific external client UIs when needed.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 

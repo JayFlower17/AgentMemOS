@@ -147,6 +147,25 @@ Current MCP tools:
 - `agentmemos_list_insights`
 - `agentmemos_run_governance`
 
+Client configuration examples are available in `examples/mcp_client_configs.md`.
+
+Run a local smoke test against a running AgentMemOS service:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/mcp_smoke_test.py
+```
+
+Tool to API mapping:
+
+| MCP tool | AgentMemOS API |
+| --- | --- |
+| `agentmemos_emit_event` | `POST /events` |
+| `agentmemos_retrieve` | `POST /retrieve` |
+| `agentmemos_create_memory` | `POST /memories` |
+| `agentmemos_list_memories` | `GET /memories` |
+| `agentmemos_list_insights` | `GET /memory-insights` |
+| `agentmemos_run_governance` | `POST /governance/run` |
+
 ## Core Endpoints
 
 - `POST /events` ingests an agent runtime event and queues memory extraction.

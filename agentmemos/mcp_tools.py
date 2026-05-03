@@ -106,6 +106,15 @@ AGENTMEMOS_MCP_TOOLS: list[JsonObject] = [
     },
 ]
 
+AGENTMEMOS_MCP_TOOL_ROUTES: dict[str, str] = {
+    "agentmemos_emit_event": "POST /events",
+    "agentmemos_retrieve": "POST /retrieve",
+    "agentmemos_create_memory": "POST /memories",
+    "agentmemos_list_memories": "GET /memories",
+    "agentmemos_list_insights": "GET /memory-insights",
+    "agentmemos_run_governance": "POST /governance/run",
+}
+
 
 def _required(arguments: JsonObject, key: str) -> Any:
     value = arguments.get(key)
@@ -211,3 +220,14 @@ class AgentMemOSMCPToolbox:
 
 def build_default_toolbox(base_url: str = "http://127.0.0.1:8014") -> AgentMemOSMCPToolbox:
     return AgentMemOSMCPToolbox(client=AgentMemOSClient(base_url=base_url))
+
+
+def describe_mcp_tool_routes() -> list[JsonObject]:
+    return [
+        {
+            "name": tool["name"],
+            "api_route": AGENTMEMOS_MCP_TOOL_ROUTES[tool["name"]],
+            "description": tool["description"],
+        }
+        for tool in AGENTMEMOS_MCP_TOOLS
+    ]
