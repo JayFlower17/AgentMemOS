@@ -2,6 +2,8 @@
 
 Event-driven scoped memory infrastructure for multi-agent workflows.
 
+CI runs on pushes to `JayFlower`, `main`, and `master`, and on pull requests. It compiles the source and runs the full pytest suite on Python 3.11 and 3.12.
+
 This MVP implements the first closed loop from the project plan:
 
 1. Agents submit events to `POST /events`.

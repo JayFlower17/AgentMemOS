@@ -682,6 +682,28 @@ Verification:
   - Embedding score contribution: `0.0603`.
 - `pytest -q`: 79 passed.
 
+### Add GitHub Actions CI
+
+- Added `.github/workflows/ci.yml`.
+- CI runs on:
+  - pushes to `JayFlower`
+  - pushes to `main`
+  - pushes to `master`
+  - pull requests
+- CI matrix covers Python 3.11 and 3.12.
+- CI steps:
+  - checkout
+  - setup Python with pip cache
+  - install `.[dev]`
+  - compile `agentmemos` and `examples`
+  - run `pytest -q`
+- Updated README with CI coverage summary.
+
+Verification:
+
+- `python -m compileall -q agentmemos examples`: passed.
+- `pytest -q`: 79 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -710,6 +732,7 @@ Verification:
 - Optional Redis-backed `JobQueue` adapter with in-memory default preserved.
 - Redis queue operationalization with status counters, dead-letter tracking, retry/backoff, and independent worker entrypoint.
 - Redis local validation compose and smoke test for API plus independent worker flow.
+- Redis pub/sub backed SSE fanout validated with real Redis E2E smoke test.
 - Durable SQLite vector store option with in-memory default preserved.
 - Optional Postgres/pgvector vector store for production-style shared vector indexes.
 - Expanded Python SDK client for external agent and adapter integration.
@@ -719,6 +742,7 @@ Verification:
 - SQLite schema compatibility guard for local MVP evolution.
 - Structured rule-based extractor with auditable content signals.
 - Development dashboard for inspecting memories, events, traces, decisions, and relations.
+- GitHub Actions CI for compile checks and full test suite on Python 3.11 and 3.12.
 
 ## Known Gaps
 
@@ -730,16 +754,16 @@ Verification:
 - Governance scheduling is in-process only; it is not yet backed by a durable queue or lock.
 - SDK covers core APIs; LangGraph-style adapter and MCP-ready tool layer exist, while OpenAI Agents/AutoGen/CrewAI adapters are still pending.
 - MCP integration has local client configuration examples, but has not yet been validated inside each external client UI.
-- SSE stream is process-local; queue state can use Redis, but realtime fanout is not yet Redis pub/sub backed.
+- Redis-backed SSE fanout exists, while external client UI validation is still pending.
 
 ## Next Recommended Step
 
 Draft the persistence and queue boundaries before swapping infrastructure:
 
-1. Add Redis pub/sub or equivalent fanout for multi-process SSE.
-2. Validate MCP configuration inside specific external client UIs when needed.
-3. Add CI workflow once the local MVP stabilizes further.
-4. Improve extractor beyond rule-based MVP with an optional LLM extractor boundary.
+1. Improve extractor beyond rule-based MVP with an optional LLM extractor boundary.
+2. Add optional external embedding provider.
+3. Validate MCP configuration inside specific external client UIs when needed.
+4. Add authentication and tenant boundaries before any shared deployment.
 
 This moves the MVP toward a production-like shape without prematurely replacing the current local development stack:
 
