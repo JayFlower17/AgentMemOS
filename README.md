@@ -305,6 +305,7 @@ Retry behavior is configurable:
 ```powershell
 $env:AGENTMEMOS_JOB_MAX_ATTEMPTS="3"
 $env:AGENTMEMOS_JOB_RETRY_BACKOFF_SECONDS="1"
+$env:AGENTMEMOS_WORKER_CONCURRENCY="4"
 ```
 
 Inspect queue status:
@@ -326,6 +327,14 @@ $env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/redis_queue_e2
 ```
 
 The E2E runner also enables Redis-backed SSE fanout and verifies worker events are visible through `/events/stream`.
+
+Run a lightweight concurrent event ingestion load test against a running API:
+
+```powershell
+$env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/load_test_events.py --requests 100 --concurrency 20
+```
+
+The load test reports success count, failure count, throughput, average latency, P95 latency, and queue status before/after the run. It is intended as a concurrency-readiness smoke test, not a replacement for full production benchmarking.
 
 Stop Redis when finished:
 

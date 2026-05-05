@@ -204,6 +204,8 @@ class QueueStatus(BaseModel):
     last_error: str | None = None
     worker_running: bool
     api_worker_enabled: bool
+    worker_concurrency: int
+    active_workers: int
     max_attempts: int
     retry_backoff_seconds: float
 

@@ -325,9 +325,12 @@ def get_governance_scheduler_status(request: Request) -> GovernanceSchedulerStat
 def get_queue_status(request: Request) -> QueueStatus:
     worker = request.app.state.memory_worker
     queue_stats = worker.job_queue.stats()
+    worker_state = worker.state()
     return QueueStatus(
         **queue_stats,
-        worker_running=worker.state()["running"],
+        worker_running=worker_state["running"],
+        worker_concurrency=worker_state["worker_concurrency"],
+        active_workers=worker_state["active_workers"],
         api_worker_enabled=settings.api_worker_enabled,
         max_attempts=settings.job_max_attempts,
         retry_backoff_seconds=settings.job_retry_backoff_seconds,

@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from agentmemos.config import get_settings
 from agentmemos.database import SessionLocal
 from agentmemos.enums import AgentRole, EventType, MemoryScope, MemoryType
 from agentmemos.main import app
@@ -217,6 +218,24 @@ def test_worker_failure_handler_retries_then_dead_letters():
     assert stats["last_error"] == "second failure"
 
 
+def test_worker_start_uses_configured_concurrency(monkeypatch):
+    async def run_worker():
+        monkeypatch.setenv("AGENTMEMOS_WORKER_CONCURRENCY", "3")
+        get_settings.cache_clear()
+        worker = MemoryWorker(job_queue=InMemoryJobQueue())
+        await worker.start()
+        state = worker.state()
+        await worker.stop()
+        get_settings.cache_clear()
+        return state
+
+    state = asyncio.run(run_worker())
+
+    assert state["running"] is True
+    assert state["worker_concurrency"] == 3
+    assert state["active_workers"] == 3
+
+
 def test_worker_processes_extract_memory_job():
     with TestClient(app) as client:
         task_id = f"task_queue_extract_{uuid4().hex}"
@@ -422,6 +441,8 @@ def test_queue_status_endpoint_reports_worker_and_retry_config():
         assert status["queue_name"] == "memory"
         assert status["worker_running"] is True
         assert status["api_worker_enabled"] is True
+        assert status["worker_concurrency"] >= 1
+        assert status["active_workers"] >= 1
         assert status["max_attempts"] >= 1
         assert "pending" in status
 

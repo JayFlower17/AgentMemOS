@@ -51,6 +51,7 @@ class Settings(BaseModel):
     openai_extractor_timeout_seconds: float = Field(default=20.0, ge=1, le=120)
     job_queue_backend: str = Field(default="memory", pattern="^(memory|redis)$")
     api_worker_enabled: bool = True
+    worker_concurrency: int = Field(default=1, ge=1, le=64)
     job_max_attempts: int = Field(default=3, ge=1, le=20)
     job_retry_backoff_seconds: float = Field(default=1.0, ge=0, le=3600)
     redis_url: str = "redis://localhost:6379/0"
@@ -94,6 +95,7 @@ def get_settings() -> Settings:
         openai_extractor_timeout_seconds=float(os.getenv("AGENTMEMOS_OPENAI_EXTRACTOR_TIMEOUT_SECONDS", "20")),
         job_queue_backend=os.getenv("AGENTMEMOS_JOB_QUEUE_BACKEND", "memory"),
         api_worker_enabled=env_bool("AGENTMEMOS_API_WORKER_ENABLED", True),
+        worker_concurrency=int(os.getenv("AGENTMEMOS_WORKER_CONCURRENCY", "1")),
         job_max_attempts=int(os.getenv("AGENTMEMOS_JOB_MAX_ATTEMPTS", "3")),
         job_retry_backoff_seconds=float(os.getenv("AGENTMEMOS_JOB_RETRY_BACKOFF_SECONDS", "1")),
         redis_url=os.getenv("AGENTMEMOS_REDIS_URL", "redis://localhost:6379/0"),

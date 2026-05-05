@@ -36,21 +36,28 @@ class MemoryWorker:
         self.vector_store = vector_store or InMemoryVectorStore()
         self.event_bus = event_bus
         self.extractor_provider = extractor_provider
-        self._task: asyncio.Task | None = None
+        self._tasks: list[asyncio.Task] = []
         self._running = False
         if self.extractor_provider is None:
             self.extractor_provider = create_extractor_provider(backend=self.settings.extractor_backend)
 
     async def start(self) -> None:
+        if self._running:
+            return
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._tasks = [
+            asyncio.create_task(self._run(worker_index=index), name=f"agentmemos-worker-{index}")
+            for index in range(self.settings.worker_concurrency)
+        ]
 
     async def stop(self) -> None:
         self._running = False
-        if self._task:
-            self._task.cancel()
+        for task in self._tasks:
+            task.cancel()
+        for task in self._tasks:
             with suppress(asyncio.CancelledError):
-                await self._task
+                await task
+        self._tasks = []
 
     async def enqueue(self, event_id: str) -> None:
         await self.enqueue_job(MemoryJob.extract_memory(event_id))
@@ -69,18 +76,26 @@ class MemoryWorker:
     def state(self) -> dict:
         return {
             "running": self._running,
+            "worker_concurrency": self.settings.worker_concurrency,
+            "active_workers": len([task for task in self._tasks if not task.done()]),
             "queue": self.job_queue.stats(),
             "max_attempts": self.settings.job_max_attempts,
             "retry_backoff_seconds": self.settings.job_retry_backoff_seconds,
         }
 
-    async def _run(self) -> None:
+    async def _run(self, *, worker_index: int = 0) -> None:
         while self._running:
             job = await self.job_queue.dequeue()
             try:
-                self._publish("job.started", {"job_type": job.job_type.value, "payload": job.payload})
+                self._publish(
+                    "job.started",
+                    {"job_type": job.job_type.value, "payload": job.payload, "worker_index": worker_index},
+                )
                 await self._process_job(job)
-                self._publish("job.completed", {"job_type": job.job_type.value, "payload": job.payload})
+                self._publish(
+                    "job.completed",
+                    {"job_type": job.job_type.value, "payload": job.payload, "worker_index": worker_index},
+                )
             except Exception as exc:
                 retried = await self._handle_failure(job, exc)
                 self._publish(
@@ -92,6 +107,7 @@ class MemoryWorker:
                         "attempts": job.attempts + 1,
                         "max_attempts": job.max_attempts,
                         "will_retry": retried,
+                        "worker_index": worker_index,
                     },
                 )
             finally:

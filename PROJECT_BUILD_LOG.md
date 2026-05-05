@@ -818,6 +818,37 @@ Verification:
 
 - Markdown documentation generated and copied locally.
 
+### Add worker concurrency and load testing
+
+- Added configurable worker concurrency with `AGENTMEMOS_WORKER_CONCURRENCY`.
+- `MemoryWorker` now starts multiple worker tasks when configured and reports active worker count through `/queue/status`.
+- Job realtime events now include `worker_index` so concurrent worker processing can be observed in traces/SSE.
+- Added `examples/load_test_events.py` to simulate concurrent `POST /events` ingestion.
+- The load test reports:
+  - request count
+  - concurrency
+  - success/failure count
+  - throughput
+  - average latency
+  - P95 latency
+  - queue status before and after the run
+- Updated README with worker concurrency and load test usage.
+
+Verification:
+
+- `python -m py_compile agentmemos/config.py agentmemos/worker.py agentmemos/schemas.py agentmemos/main.py examples/load_test_events.py`: passed.
+- `pytest -q tests/test_queue.py`: 18 passed.
+- `pytest -q`: 92 passed.
+- Started local AgentMemOS API on `http://127.0.0.1:8014`.
+- `python examples/load_test_events.py --base-url http://127.0.0.1:8014 --requests 50 --concurrency 10 --wait-seconds 20`: passed.
+  - Success: 50.
+  - Failed: 0.
+  - Throughput: 15.91 requests/second.
+  - Average latency: 576.77 ms.
+  - P95 latency: 827.51 ms.
+  - Max latency: 998.41 ms.
+  - Queue after run: `pending=0`, `enqueued=100`, `dequeued=100`, `completed=100`, `failed=0`, `dead_lettered=0`.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
