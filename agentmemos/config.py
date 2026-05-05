@@ -75,6 +75,11 @@ class Settings(BaseModel):
     governance_scheduler_actor: str = "governance_scheduler"
     governance_duplicate_confidence_threshold: float = Field(default=0.85, ge=0, le=1)
     governance_max_accepts: int = Field(default=10, ge=0, le=100)
+    governance_reviewer_backend: str = Field(default="rule", pattern="^(rule|openai)$")
+    governance_reviewer_max_pairs: int = Field(default=25, ge=0, le=500)
+    governance_reviewer_min_confidence: float = Field(default=0.7, ge=0, le=1)
+    openai_governance_model: str = "gpt-4o-mini"
+    openai_governance_timeout_seconds: float = Field(default=20.0, ge=1, le=120)
 
 
 @lru_cache
@@ -142,4 +147,9 @@ def get_settings() -> Settings:
             os.getenv("AGENTMEMOS_GOVERNANCE_DUPLICATE_CONFIDENCE_THRESHOLD", "0.85")
         ),
         governance_max_accepts=int(os.getenv("AGENTMEMOS_GOVERNANCE_MAX_ACCEPTS", "10")),
+        governance_reviewer_backend=os.getenv("AGENTMEMOS_GOVERNANCE_REVIEWER_BACKEND", "rule"),
+        governance_reviewer_max_pairs=int(os.getenv("AGENTMEMOS_GOVERNANCE_REVIEWER_MAX_PAIRS", "25")),
+        governance_reviewer_min_confidence=float(os.getenv("AGENTMEMOS_GOVERNANCE_REVIEWER_MIN_CONFIDENCE", "0.7")),
+        openai_governance_model=os.getenv("AGENTMEMOS_OPENAI_GOVERNANCE_MODEL", "gpt-4o-mini"),
+        openai_governance_timeout_seconds=float(os.getenv("AGENTMEMOS_OPENAI_GOVERNANCE_TIMEOUT_SECONDS", "20")),
     )

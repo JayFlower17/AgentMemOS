@@ -1,4 +1,8 @@
 from hashlib import sha1
+import json
+from typing import Any, Callable, Protocol
+from urllib.error import URLError
+from urllib.request import ProxyHandler, Request, build_opener
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -21,6 +25,20 @@ from agentmemos.schemas import (
     RunGovernanceResponse,
 )
 from agentmemos.serializers import memory_governance_action_to_schema, memory_relation_to_schema
+
+
+GovernanceReviewTransport = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+class GovernanceReviewerProvider(Protocol):
+    name: str
+
+    def suggest(
+        self,
+        db: Session,
+        left: MemoryRecordModel,
+        right: MemoryRecordModel,
+    ) -> MemoryRelationSuggestion | None: ...
 
 
 def _stable_id(prefix: str, *parts: str) -> str:
@@ -152,7 +170,166 @@ def relation_suggestion_id(relation_type: str, source_id: str, target_id: str) -
     return _stable_id("suggest", relation_type, source_id, target_id)
 
 
+class RuleBasedGovernanceReviewer:
+    name = "rule"
+
+    def suggest(
+        self,
+        db: Session,
+        left: MemoryRecordModel,
+        right: MemoryRecordModel,
+    ) -> MemoryRelationSuggestion | None:
+        return _rule_suggest_relation_for_pair(db, left, right)
+
+
+class OpenAIGovernanceReviewer:
+    name = "openai"
+
+    def __init__(
+        self,
+        *,
+        api_key: str = "",
+        base_url: str = "https://api.openai.com/v1",
+        model: str = "gpt-4o-mini",
+        timeout_seconds: float = 20.0,
+        min_confidence: float = 0.7,
+        transport: GovernanceReviewTransport | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout_seconds = timeout_seconds
+        self.min_confidence = min_confidence
+        self.transport = transport
+
+    def suggest(
+        self,
+        db: Session,
+        left: MemoryRecordModel,
+        right: MemoryRecordModel,
+    ) -> MemoryRelationSuggestion | None:
+        if not self.api_key and self.transport is None:
+            return None
+        try:
+            raw = self._call_model(left, right)
+            suggestion = self._suggestion_from_model(left, right, raw)
+        except Exception:
+            return None
+        if suggestion is None:
+            return None
+        if has_existing_relation(db, suggestion.source_memory_id, suggestion.target_memory_id, suggestion.relation_type):
+            return None
+        return suggestion
+
+    def _call_model(self, left: MemoryRecordModel, right: MemoryRecordModel) -> dict[str, Any]:
+        payload = {
+            "model": self.model,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an AgentMemOS memory governance reviewer. Return only JSON. "
+                        "You only generate governance suggestions; you never mutate memory state. "
+                        "Choose relation_type as one of duplicates, conflicts_with, supersedes, none. "
+                        "Use duplicates when memories express the same reusable knowledge. "
+                        "Use conflicts_with when both memories cannot be true in the same scope. "
+                        "Use supersedes when the source memory clearly replaces the target memory. "
+                        "Use none when relation evidence is weak or context-dependent."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "left_memory": _memory_review_payload(left),
+                            "right_memory": _memory_review_payload(right),
+                            "required_json_schema": {
+                                "relation_type": "duplicates|conflicts_with|supersedes|none",
+                                "confidence": "number 0..1",
+                                "source_memory_id": "memory id for relation source; for supersedes this is the newer/canonical memory",
+                                "target_memory_id": "memory id for relation target",
+                                "reason": "short explanation",
+                                "evidence": "object with concise supporting details",
+                                "suggested_action": "short action for a human or governance agent to review",
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+        }
+        if self.transport is not None:
+            return self.transport(payload)
+
+        request = Request(
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        opener = build_opener(ProxyHandler({}))
+        try:
+            with opener.open(request, timeout=self.timeout_seconds) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except URLError as exc:
+            raise RuntimeError(f"LLM governance request failed: {exc.reason}") from exc
+
+    def _suggestion_from_model(
+        self,
+        left: MemoryRecordModel,
+        right: MemoryRecordModel,
+        raw: dict[str, Any],
+    ) -> MemoryRelationSuggestion | None:
+        content = raw["choices"][0]["message"]["content"]
+        data = _parse_json_object(content)
+        relation_type = str(data.get("relation_type") or "none")
+        if relation_type == "none":
+            return None
+        if relation_type not in {"duplicates", "conflicts_with", "supersedes"}:
+            return None
+        confidence = _clamp(float(data.get("confidence", 0)))
+        if confidence < self.min_confidence:
+            return None
+        valid_ids = {left.memory_id, right.memory_id}
+        source_memory_id = str(data.get("source_memory_id") or left.memory_id)
+        target_memory_id = str(data.get("target_memory_id") or right.memory_id)
+        if source_memory_id not in valid_ids or target_memory_id not in valid_ids or source_memory_id == target_memory_id:
+            source_memory_id, target_memory_id = left.memory_id, right.memory_id
+        evidence = dict(data.get("evidence") or {})
+        evidence.update(
+            {
+                "reviewer": "openai-compatible-governance-reviewer-v1",
+                "model": self.model,
+                "provider": self.name,
+            }
+        )
+        return MemoryRelationSuggestion(
+            suggestion_id=relation_suggestion_id(relation_type, source_memory_id, target_memory_id),
+            relation_type=relation_type,
+            confidence=confidence,
+            source_memory_id=source_memory_id,
+            target_memory_id=target_memory_id,
+            reason=str(data.get("reason") or "LLM reviewer suggested this governance relation."),
+            evidence=evidence,
+            suggested_action=str(data.get("suggested_action") or "Review this LLM-assisted governance suggestion."),
+        )
+
+
 def suggest_relation_for_pair(
+    db: Session,
+    left: MemoryRecordModel,
+    right: MemoryRecordModel,
+) -> MemoryRelationSuggestion | None:
+    return RuleBasedGovernanceReviewer().suggest(db, left, right)
+
+
+def _rule_suggest_relation_for_pair(
     db: Session,
     left: MemoryRecordModel,
     right: MemoryRecordModel,
@@ -205,7 +382,12 @@ def suggest_relation_for_pair(
     return None
 
 
-def list_relation_suggestions(db: Session, task_id: str | None = None, limit: int | None = None) -> list[MemoryRelationSuggestion]:
+def list_relation_suggestions(
+    db: Session,
+    task_id: str | None = None,
+    limit: int | None = None,
+    reviewer_provider: GovernanceReviewerProvider | None = None,
+) -> list[MemoryRelationSuggestion]:
     stmt = (
         select(MemoryRecordModel)
         .where(MemoryRecordModel.status == MemoryStatus.active)
@@ -216,13 +398,25 @@ def list_relation_suggestions(db: Session, task_id: str | None = None, limit: in
         stmt = stmt.where(MemoryRecordModel.task_id == task_id)
     memories = list(db.scalars(stmt))
     suggestions: list[MemoryRelationSuggestion] = []
+    seen_suggestion_ids: set[str] = set()
+    rule_reviewer = RuleBasedGovernanceReviewer()
+    llm_reviewer = reviewer_provider or _configured_llm_reviewer()
+    llm_reviewed_pairs = 0
+    llm_max_pairs = _configured_llm_max_pairs() if reviewer_provider is None else 500
     for index, left in enumerate(memories):
         for right in memories[index + 1 :]:
             if left.task_id != right.task_id or left.memory_type != right.memory_type or left.scope != right.scope:
                 continue
-            suggestion = suggest_relation_for_pair(db, left, right)
+            suggestion = rule_reviewer.suggest(db, left, right)
             if suggestion:
-                suggestions.append(suggestion)
+                _append_unique_suggestion(suggestions, seen_suggestion_ids, suggestion)
+                continue
+            if llm_reviewer is None or llm_reviewed_pairs >= llm_max_pairs or not _should_llm_review_pair(left, right):
+                continue
+            llm_reviewed_pairs += 1
+            suggestion = llm_reviewer.suggest(db, left, right)
+            if suggestion:
+                _append_unique_suggestion(suggestions, seen_suggestion_ids, suggestion)
     suggestions.sort(key=lambda item: item.confidence, reverse=True)
     if limit is None:
         return suggestions
@@ -384,3 +578,74 @@ def list_memory_insights(db: Session, task_id: str | None = None, limit: int = 5
     severity_rank = {"high": 0, "medium": 1, "low": 2}
     insights.sort(key=lambda item: (severity_rank.get(item.severity, 9), item.created_at or utcnow()), reverse=False)
     return insights[: min(limit, 200)]
+
+
+def _append_unique_suggestion(
+    suggestions: list[MemoryRelationSuggestion],
+    seen_suggestion_ids: set[str],
+    suggestion: MemoryRelationSuggestion,
+) -> None:
+    if suggestion.suggestion_id in seen_suggestion_ids:
+        return
+    seen_suggestion_ids.add(suggestion.suggestion_id)
+    suggestions.append(suggestion)
+
+
+def _configured_llm_reviewer() -> GovernanceReviewerProvider | None:
+    from agentmemos.config import get_settings
+
+    settings = get_settings()
+    if settings.governance_reviewer_backend != "openai":
+        return None
+    return OpenAIGovernanceReviewer(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+        model=settings.openai_governance_model,
+        timeout_seconds=settings.openai_governance_timeout_seconds,
+        min_confidence=settings.governance_reviewer_min_confidence,
+    )
+
+
+def _configured_llm_max_pairs() -> int:
+    from agentmemos.config import get_settings
+
+    return get_settings().governance_reviewer_max_pairs
+
+
+def _should_llm_review_pair(left: MemoryRecordModel, right: MemoryRecordModel) -> bool:
+    overlap = jaccard(memory_terms(left), memory_terms(right))
+    if overlap >= 0.12:
+        return True
+    return left.agent_id != right.agent_id and bool(memory_terms(left) & memory_terms(right))
+
+
+def _memory_review_payload(memory: MemoryRecordModel) -> dict[str, Any]:
+    return {
+        "memory_id": memory.memory_id,
+        "task_id": memory.task_id,
+        "agent_id": memory.agent_id,
+        "memory_type": memory.memory_type,
+        "scope": memory.scope,
+        "summary": memory.summary,
+        "content": memory.content,
+        "confidence": memory.confidence,
+        "importance": memory.importance,
+        "created_at": memory.created_at.isoformat() if memory.created_at else None,
+    }
+
+
+def _parse_json_object(content: str) -> dict[str, Any]:
+    cleaned = content.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise ValueError("LLM response did not contain a JSON object")
+    return json.loads(cleaned[start : end + 1])
+
+
+def _clamp(value: float) -> float:
+    return max(0.0, min(1.0, round(value, 4)))

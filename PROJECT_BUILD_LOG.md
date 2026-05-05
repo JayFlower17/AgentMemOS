@@ -849,6 +849,32 @@ Verification:
   - Max latency: 998.41 ms.
   - Queue after run: `pending=0`, `enqueued=100`, `dequeued=100`, `completed=100`, `failed=0`, `dead_lettered=0`.
 
+### Add LLM-assisted governance suggestion provider
+
+- Added configurable governance reviewer settings:
+  - `AGENTMEMOS_GOVERNANCE_REVIEWER_BACKEND=rule|openai`
+  - `AGENTMEMOS_GOVERNANCE_REVIEWER_MAX_PAIRS`
+  - `AGENTMEMOS_GOVERNANCE_REVIEWER_MIN_CONFIDENCE`
+  - `AGENTMEMOS_OPENAI_GOVERNANCE_MODEL`
+  - `AGENTMEMOS_OPENAI_GOVERNANCE_TIMEOUT_SECONDS`
+- Added `GovernanceReviewerProvider` boundary.
+- Wrapped existing rule/similarity suggestions in `RuleBasedGovernanceReviewer`.
+- Added `OpenAIGovernanceReviewer` for OpenAI-compatible semantic governance review.
+- LLM reviewer can suggest:
+  - `duplicates`
+  - `conflicts_with`
+  - `supersedes`
+- LLM reviewer only returns suggestions and never mutates memory status or creates relations directly.
+- `list_relation_suggestions` now keeps rule-based suggestions as the default and can add LLM-assisted suggestions when configured.
+- Added tests proving LLM reviewer suggestions are generated without mutating relation state.
+- Updated README with LLM governance reviewer configuration and safety boundary.
+
+Verification:
+
+- `python -m py_compile agentmemos/governance.py agentmemos/config.py tests/test_governance.py`: passed.
+- `pytest -q tests/test_governance.py`: 6 passed.
+- `pytest -q`: 94 passed.
+
 ## Current System Capabilities
 
 - Event-driven memory ingestion.
@@ -863,6 +889,7 @@ Verification:
 - Governance-aware retrieval.
 - Agent-readable memory insights.
 - Automatic relation suggestions.
+- Optional LLM-assisted governance relation suggestions with rule-based default preserved.
 - Audited acceptance path for governance suggestions.
 - Conservative governance agent example.
 - Server-side governance pass endpoint.
@@ -893,7 +920,7 @@ Verification:
 
 ## Known Gaps
 
-- Relation suggestions still use lexical heuristics by default; vector-assisted retrieval can use memory, SQLite, or optional pgvector storage.
+- Relation suggestions use lexical heuristics by default, with optional OpenAI-compatible LLM reviewer support for semantic suggestions; vector-assisted retrieval can use memory, SQLite, or optional pgvector storage.
 - Governance, extraction, and embedding indexing use a typed job queue; Redis adapter supports status counters and dead letters, with Docker Compose available for local validation.
 - SQLite remains the default local store behind thin repositories; pgvector exists for vector indexes, while full Postgres primary persistence is still pending.
 - Suggestions are not applied automatically; they require explicit acceptance.

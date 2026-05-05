@@ -141,6 +141,19 @@ $env:AGENTMEMOS_BASE_URL="http://127.0.0.1:8014"; python examples/governance_age
 The example fetches memory insights and relation suggestions, accepts only high-confidence duplicate suggestions, and leaves conflicts for explicit review.
 By default it accepts at most 10 suggestions per run. Override with `AGENTMEMOS_GOVERNANCE_MAX_ACCEPTS`.
 
+Governance suggestions are rule/similarity-based by default. An OpenAI-compatible LLM reviewer can be enabled to add semantic suggestions, but it only proposes relations and never mutates memory state directly:
+
+```powershell
+$env:AGENTMEMOS_GOVERNANCE_REVIEWER_BACKEND="openai"
+$env:AGENTMEMOS_OPENAI_API_KEY="..."
+$env:AGENTMEMOS_OPENAI_BASE_URL="https://api.openai.com/v1"
+$env:AGENTMEMOS_OPENAI_GOVERNANCE_MODEL="gpt-4o-mini"
+$env:AGENTMEMOS_GOVERNANCE_REVIEWER_MAX_PAIRS="25"
+$env:AGENTMEMOS_GOVERNANCE_REVIEWER_MIN_CONFIDENCE="0.7"
+```
+
+The LLM reviewer can suggest `duplicates`, `conflicts_with`, or `supersedes`. Suggestions still require acceptance through the governance API or governance pass policy, and accepted actions are written to the governance audit log.
+
 ## Generic Agent Step Adapter
 
 Use the framework-agnostic adapter to wrap any dict-in, dict-out agent step:
