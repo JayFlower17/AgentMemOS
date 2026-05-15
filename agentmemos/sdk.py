@@ -144,6 +144,9 @@ class AgentMemOSClient:
     def get_memory(self, memory_id: str) -> dict[str, Any]:
         return self._request("GET", f"/memories/{memory_id}")
 
+    def get_memory_evidence(self, memory_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/memories/{memory_id}/evidence")
+
     def list_memory_decisions(self, *, memory_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         path = f"/memories/{memory_id}/decisions" if memory_id else f"/memory-decisions?limit={limit}"
         result = self._request("GET", path)

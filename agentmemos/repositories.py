@@ -60,7 +60,7 @@ class MemoryRepository:
         memory_type: str | None = None,
         limit: int = 100,
     ) -> list[MemoryRecordModel]:
-        stmt = select(MemoryRecordModel).order_by(MemoryRecordModel.created_at.desc()).limit(_limit(limit, 300))
+        stmt = select(MemoryRecordModel).order_by(MemoryRecordModel.created_at.desc()).limit(_limit(limit, 10000))
         if task_id:
             stmt = stmt.where(MemoryRecordModel.task_id == task_id)
         if scope:

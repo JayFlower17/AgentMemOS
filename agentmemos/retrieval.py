@@ -10,6 +10,8 @@ ROLE_TYPE_WEIGHTS = {
     AgentRole.planner: {MemoryType.working: 1.0, MemoryType.episodic: 0.5, MemoryType.procedural: 0.7},
     AgentRole.coder: {MemoryType.working: 0.8, MemoryType.episodic: 0.8, MemoryType.procedural: 1.0},
     AgentRole.reviewer: {MemoryType.working: 0.6, MemoryType.episodic: 1.0, MemoryType.procedural: 0.8},
+    AgentRole.user: {MemoryType.working: 0.7, MemoryType.episodic: 1.0, MemoryType.procedural: 0.6},
+    AgentRole.assistant: {MemoryType.working: 0.8, MemoryType.episodic: 0.8, MemoryType.procedural: 0.8},
 }
 
 SCOPE_WEIGHTS = {

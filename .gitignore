@@ -6,3 +6,6 @@ __pycache__/
 .env
 .venv/
 venv/
+docs/
+evals/datasets/locomo10.json
+evals/reports/

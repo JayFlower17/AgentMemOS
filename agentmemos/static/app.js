@@ -253,8 +253,16 @@ function applyLanguage() {
 
 function fmtDate(value) {
   if (!value) return "n/a";
-  const date = new Date(value);
-  return date.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const normalized = typeof value === "string" && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? `${value}Z` : value;
+  const date = new Date(normalized);
+  return date.toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function setText(id, value) {

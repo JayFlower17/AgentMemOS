@@ -60,6 +60,16 @@ class MemoryRecord(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MemoryEvidence(BaseModel):
+    memory: MemoryRecord
+    source_event: AgentEvent | None
+    decisions: list["MemoryDecisionTrace"] = Field(default_factory=list)
+    promotions: list["PromotionDecision"] = Field(default_factory=list)
+    status_decisions: list["MemoryStatusDecision"] = Field(default_factory=list)
+    relations: list["MemoryRelation"] = Field(default_factory=list)
+    evidence_path: list[str] = Field(default_factory=list)
+
+
 class MemoryDecisionTrace(BaseModel):
     decision_id: str
     memory_id: str

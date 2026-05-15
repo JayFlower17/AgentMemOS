@@ -60,6 +60,15 @@ def test_event_to_retrieval_trace_flow():
         assert extracted_decision["chosen_scope"] == "team-shared"
         assert "Review findings" in extracted_decision["reason"]
 
+        evidence_response = client.get(f"/memories/{memory_id}/evidence")
+        assert evidence_response.status_code == 200
+        evidence = evidence_response.json()
+        assert evidence["memory"]["memory_id"] == memory_id
+        assert evidence["source_event"]["event_id"] == source_event_id
+        assert evidence["decisions"]
+        assert "source_event:" + source_event_id in evidence["evidence_path"]
+        assert "decision_trace" in evidence["evidence_path"]
+
 
 def test_agent_local_memory_is_hidden_from_other_agents():
     with TestClient(app) as client:

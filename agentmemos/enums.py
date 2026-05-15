@@ -5,12 +5,15 @@ class AgentRole(StrEnum):
     planner = "planner"
     coder = "coder"
     reviewer = "reviewer"
+    user = "user"
+    assistant = "assistant"
 
 
 class EventType(StrEnum):
     task_created = "task.created"
     task_claimed = "task.claimed"
     agent_message_sent = "agent.message.sent"
+    conversation_turn_observed = "conversation.turn.observed"
     tool_result_observed = "tool.result.observed"
     subtask_completed = "subtask.completed"
     review_finding_created = "review.finding.created"

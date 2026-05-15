@@ -4,6 +4,71 @@ Event-driven scoped memory infrastructure for multi-agent workflows.
 
 CI runs on pushes to `JayFlower`, `main`, and `master`, and on pull requests. It compiles the source and runs the full pytest suite on Python 3.11 and 3.12.
 
+## Interview Demo Quickstart
+
+AgentMemOS is an external memory service for multi-agent workflows. It turns agent runtime events into scoped, auditable, governable memories instead of storing raw chat history.
+
+What to show in an interview:
+
+```text
+planner/coder/reviewer events
+-> worker extraction
+-> role-aware retrieval
+-> retrieval trace explain
+-> duplicate/conflict/supersedes governance
+-> LoCoMo + governance eval reports
+```
+
+One-command stable local demo:
+
+```powershell
+python -m pip install -e ".[dev]"
+powershell -ExecutionPolicy Bypass -File examples/interview_quickstart.ps1 -Mode local -RunEval
+```
+
+Keep the dashboard open after the run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File examples/interview_quickstart.ps1 -Mode local -RunEval -KeepServer
+```
+
+Open:
+
+- Dashboard: http://127.0.0.1:8018/
+- API docs: http://127.0.0.1:8018/docs
+- Interview script: `docs/interview_demo_script.md`
+- Evaluation report: `docs/evaluation_report.md`
+
+LLM demo mode uses OpenAI-compatible providers. Example environment:
+
+```powershell
+$env:AGENTMEMOS_OPENAI_API_KEY="..."
+$env:AGENTMEMOS_OPENAI_BASE_URL="https://api.deepseek.com"
+$env:AGENTMEMOS_OPENAI_EXTRACTOR_MODEL="deepseek-chat"
+$env:AGENTMEMOS_OPENAI_GOVERNANCE_MODEL="deepseek-chat"
+$env:AGENTMEMOS_OPENAI_EMBEDDING_API_KEY="..."
+$env:AGENTMEMOS_OPENAI_EMBEDDING_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+$env:AGENTMEMOS_OPENAI_EMBEDDING_MODEL="text-embedding-v4"
+powershell -ExecutionPolicy Bypass -File examples/interview_quickstart.ps1 -Mode llm -RunEval
+```
+
+Do not commit API keys. Prefer local environment variables or an untracked key file.
+
+Latest verified eval results:
+
+```text
+LoCoMo local eval:
+  samples=3 questions=30 Recall@5=0.1000 MRR=0.0583 avg_latency_ms=123.60
+
+LoCoMo LLM smoke eval:
+  samples=1 questions=10 Recall@5=0.2000 MRR=0.0533 avg_latency_ms=2254.74
+
+Governance local/LLM eval:
+  duplicates/conflicts_with/supersedes precision=1.0 recall=1.0
+```
+
+Full reports are written to `evals/reports/`.
+
 This MVP implements the first closed loop from the project plan:
 
 1. Agents submit events to `POST /events`.
@@ -14,6 +79,7 @@ This MVP implements the first closed loop from the project plan:
 6. Duplicate writes reuse the matching active memory and add a `deduplicated` decision trace.
 7. Memory governance relations mark superseded, conflicting, and duplicate memories.
 8. Every retrieval applies memory governance and writes an auditable trace with selected memories, filtered memories, scores, open relation warnings, and reasons, available at `GET /traces/{trace_id}`.
+9. Every memory can be drilled down through `GET /memories/{memory_id}/evidence` to inspect its source event, extraction decisions, lifecycle changes, and governance relations.
 
 The default setup is intentionally light: no Postgres or Redis is required for local development. The app is structured so those can be added behind the storage and queue boundaries later.
 

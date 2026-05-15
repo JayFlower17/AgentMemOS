@@ -1,0 +1,75 @@
+{
+  "cases": [
+    {
+      "case_id": "gov_duplicate_001",
+      "task_id": "task_governance_eval",
+      "memories": [
+        {
+          "label": "canonical",
+          "content": "Redis queue decouples memory extraction and embedding indexing from API writes.",
+          "summary": "Redis queue decouples memory jobs from API writes.",
+          "scope": "team-shared",
+          "memory_type": "episodic",
+          "importance": 0.86
+        },
+        {
+          "label": "duplicate",
+          "content": "Redis queue decouples memory extraction and embedding indexing from API write paths.",
+          "summary": "Redis queue decouples memory extraction and embedding indexing from API writes.",
+          "scope": "team-shared",
+          "memory_type": "episodic",
+          "importance": 0.74
+        }
+      ],
+      "expected_relation": "duplicates",
+      "source_label": "canonical",
+      "target_label": "duplicate"
+    },
+    {
+      "case_id": "gov_conflict_001",
+      "task_id": "task_governance_eval",
+      "memories": [
+        {
+          "label": "new",
+          "content": "Reviewer requires bounded backoff before retry approval.",
+          "summary": "Reviewer requires bounded retry backoff.",
+          "scope": "team-shared",
+          "memory_type": "episodic"
+        },
+        {
+          "label": "old",
+          "content": "Reviewer allowed approval without bounded backoff before retry approval.",
+          "summary": "Reviewer allowed retry approval without bounded backoff.",
+          "scope": "team-shared",
+          "memory_type": "episodic"
+        }
+      ],
+      "expected_relation": "conflicts_with",
+      "source_label": "new",
+      "target_label": "old"
+    },
+    {
+      "case_id": "gov_supersedes_001",
+      "task_id": "task_governance_eval",
+      "memories": [
+        {
+          "label": "old",
+          "content": "Old guidance: approval can proceed without bounded retry backoff.",
+          "summary": "Old approval guidance without bounded retry backoff.",
+          "scope": "team-shared",
+          "memory_type": "episodic"
+        },
+        {
+          "label": "new",
+          "content": "Reviewer requires bounded backoff before retry approval.",
+          "summary": "Reviewer requires bounded retry backoff.",
+          "scope": "team-shared",
+          "memory_type": "episodic"
+        }
+      ],
+      "expected_relation": "supersedes",
+      "source_label": "new",
+      "target_label": "old"
+    }
+  ]
+}

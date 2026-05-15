@@ -172,6 +172,15 @@ def _base_decision(event: AgentEventModel, signals: dict[str, bool]) -> Extracti
             "Agent messages that contain decisions are captured as task-local episodic memory.",
             ("event:agent_message", "content:decision"),
         )
+    if event.event_type == EventType.conversation_turn_observed:
+        return ExtractionDecision(
+            MemoryType.episodic,
+            MemoryScope.task_local,
+            0.7,
+            0.6,
+            "Observed conversation turns are captured as task-local episodic memory for benchmark replay.",
+            ("event:conversation_turn",),
+        )
     return ExtractionDecision(
         MemoryType.working,
         MemoryScope.agent_local,

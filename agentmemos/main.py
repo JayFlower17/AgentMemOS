@@ -40,6 +40,7 @@ from agentmemos.schemas import (
     HealthResponse,
     MemoryCreate,
     MemoryDecisionTrace,
+    MemoryEvidence,
     MemoryGovernanceAction,
     MemoryInsight,
     QueueStatus,
@@ -221,6 +222,40 @@ def get_memory(memory_id: str, db: Session = Depends(get_db)) -> MemoryRecord:
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
     return memory_to_schema(memory)
+
+
+@app.get("/memories/{memory_id}/evidence", response_model=MemoryEvidence)
+def get_memory_evidence(memory_id: str, db: Session = Depends(get_db)) -> MemoryEvidence:
+    memory_repository = MemoryRepository(db)
+    governance_repository = GovernanceRepository(db)
+    memory = memory_repository.get(memory_id)
+    if memory is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+
+    source_event = db.get(AgentEventModel, memory.source_event_id) if memory.source_event_id else None
+    decisions = memory_repository.list_decisions_for_memory(memory_id)
+    promotions = memory_repository.list_promotions_for_memory(memory_id)
+    status_decisions = memory_repository.list_status_decisions_for_memory(memory_id)
+    relations = governance_repository.list_relations_for_memory(memory_id)
+    evidence_path = [f"memory:{memory.memory_id}"]
+    if source_event is not None:
+        evidence_path.append(f"source_event:{source_event.event_id}")
+    if decisions:
+        evidence_path.append("decision_trace")
+    if relations:
+        evidence_path.append("governance_relations")
+    if promotions or status_decisions:
+        evidence_path.append("lifecycle_audit")
+
+    return MemoryEvidence(
+        memory=memory_to_schema(memory),
+        source_event=event_to_schema(source_event) if source_event is not None else None,
+        decisions=[memory_decision_to_schema(decision) for decision in decisions],
+        promotions=[promotion_to_schema(decision) for decision in promotions],
+        status_decisions=[status_decision_to_schema(decision) for decision in status_decisions],
+        relations=[memory_relation_to_schema(relation) for relation in relations],
+        evidence_path=evidence_path,
+    )
 
 
 @app.get("/memories/{memory_id}/decisions", response_model=list[MemoryDecisionTrace])

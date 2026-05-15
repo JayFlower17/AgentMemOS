@@ -351,6 +351,33 @@ def _rule_suggest_relation_for_pair(
             suggested_action="Create a duplicates relation or merge these memories into one canonical record.",
         )
 
+    supersedes_source, supersedes_target = _rule_supersedes_candidate(left, right, overlap)
+    if supersedes_source is not None and supersedes_target is not None and not has_existing_relation(
+        db,
+        supersedes_source.memory_id,
+        supersedes_target.memory_id,
+        "supersedes",
+    ):
+        return MemoryRelationSuggestion(
+            suggestion_id=relation_suggestion_id(
+                "supersedes",
+                supersedes_source.memory_id,
+                supersedes_target.memory_id,
+            ),
+            relation_type="supersedes",
+            confidence=round(min(0.92, 0.55 + overlap), 4),
+            source_memory_id=supersedes_source.memory_id,
+            target_memory_id=supersedes_target.memory_id,
+            reason="A newer active memory appears to replace older guidance for the same topic.",
+            evidence={
+                "term_overlap": round(overlap, 4),
+                "shared_terms": sorted(left_terms & right_terms)[:12],
+                "source_created_at": supersedes_source.created_at.isoformat() if supersedes_source.created_at else None,
+                "target_created_at": supersedes_target.created_at.isoformat() if supersedes_target.created_at else None,
+            },
+            suggested_action="Create a supersedes relation so retrieval filters the stale memory.",
+        )
+
     conflict_pairs = [
         ("safe", "unsafe"),
         ("safe", "require"),
@@ -380,6 +407,23 @@ def _rule_suggest_relation_for_pair(
             suggested_action="Create a conflicts_with relation and ask a reviewer or agent to resolve the canonical guidance.",
         )
     return None
+
+
+def _rule_supersedes_candidate(
+    left: MemoryRecordModel,
+    right: MemoryRecordModel,
+    overlap: float,
+) -> tuple[MemoryRecordModel | None, MemoryRecordModel | None]:
+    if overlap < 0.2:
+        return None, None
+    newer, older = (left, right) if left.created_at >= right.created_at else (right, left)
+    newer_text = f"{newer.summary} {newer.content}".casefold()
+    older_text = f"{older.summary} {older.content}".casefold()
+    newer_markers = ("updated", "latest", "new guidance", "now ", "requires", "must", "replaces")
+    older_markers = ("old guidance", "previous", "initial", "original", "formerly", "without", "allowed")
+    if any(marker in newer_text for marker in newer_markers) and any(marker in older_text for marker in older_markers):
+        return newer, older
+    return None, None
 
 
 def list_relation_suggestions(
