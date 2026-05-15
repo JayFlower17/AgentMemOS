@@ -1,3 +1,7 @@
+import math
+import re
+from collections import Counter
+
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -21,29 +25,131 @@ SCOPE_WEIGHTS = {
     MemoryScope.project_global: 0.9,
 }
 
+STOPWORDS = {
+    "the",
+    "and",
+    "for",
+    "that",
+    "with",
+    "this",
+    "from",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "how",
+    "did",
+    "does",
+    "was",
+    "were",
+    "are",
+    "is",
+    "has",
+    "have",
+    "had",
+}
+
+
+def _tokenize(text: str) -> list[str]:
+    tokens = []
+    for raw in re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", text.casefold()):
+        if len(raw) > 2 and raw not in STOPWORDS:
+            tokens.append(raw)
+    return tokens
+
+
+def _memory_text(memory: MemoryRecordModel) -> str:
+    return f"{memory.summary} {memory.content}"
+
+
 def _keyword_score(query: str, memory: MemoryRecordModel) -> float:
-    terms = {term.lower() for term in query.split() if len(term) > 2}
+    terms = set(_tokenize(query))
     if not terms:
         return 0.0
-    haystack = f"{memory.summary} {memory.content}".lower()
+    haystack = _memory_text(memory).lower()
     hits = sum(1 for term in terms if term in haystack)
     return hits / len(terms)
+
+
+def _bm25_scores(query: str, memories: list[MemoryRecordModel]) -> dict[str, float]:
+    query_terms = _tokenize(query)
+    if not query_terms or not memories:
+        return {}
+    docs = {memory.memory_id: _tokenize(_memory_text(memory)) for memory in memories}
+    doc_count = len(docs)
+    avg_doc_len = sum(len(tokens) for tokens in docs.values()) / max(1, doc_count)
+    document_frequency: Counter[str] = Counter()
+    for tokens in docs.values():
+        document_frequency.update(set(tokens))
+
+    k1 = 1.5
+    b = 0.75
+    raw_scores: dict[str, float] = {}
+    for memory_id, tokens in docs.items():
+        if not tokens:
+            raw_scores[memory_id] = 0.0
+            continue
+        term_counts = Counter(tokens)
+        score = 0.0
+        for term in query_terms:
+            freq = term_counts.get(term, 0)
+            if not freq:
+                continue
+            idf = math.log(1 + (doc_count - document_frequency[term] + 0.5) / (document_frequency[term] + 0.5))
+            denominator = freq + k1 * (1 - b + b * (len(tokens) / max(1, avg_doc_len)))
+            score += idf * ((freq * (k1 + 1)) / denominator)
+        raw_scores[memory_id] = score
+
+    max_score = max(raw_scores.values(), default=0.0)
+    if max_score <= 0:
+        return raw_scores
+    return {memory_id: score / max_score for memory_id, score in raw_scores.items()}
+
+
+def _important_terms(text: str) -> set[str]:
+    terms = set(_tokenize(text))
+    entities = {item.casefold() for item in re.findall(r"\b[A-Z][A-Za-z0-9_-]{2,}\b", text)}
+    numbers = {item.casefold() for item in re.findall(r"\b\d{1,4}(?:[-/]\d{1,2})?(?:[-/]\d{1,4})?\b", text)}
+    return terms | entities | numbers
+
+
+def _rerank_bonus(query: str, memory: MemoryRecordModel) -> float:
+    query_terms = _important_terms(query)
+    if not query_terms:
+        return 0.0
+    memory_text = _memory_text(memory)
+    memory_terms = _important_terms(memory_text)
+    overlap = len(query_terms & memory_terms) / len(query_terms)
+    phrase_bonus = 0.0
+    lowered_memory = memory_text.casefold()
+    for phrase in re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*(?:\s+[A-Za-z0-9][A-Za-z0-9_-]*)+", query):
+        normalized = phrase.casefold()
+        if len(normalized) >= 8 and normalized in lowered_memory:
+            phrase_bonus = 0.15
+            break
+    return min(1.0, overlap + phrase_bonus)
 
 
 def _score_memory(
     req: RetrieveRequest,
     memory: MemoryRecordModel,
     *,
+    bm25_score: float = 0.0,
+    rerank_bonus: float = 0.0,
     embedding_score: float = 0.0,
     embedding_weight: float = 0.0,
 ) -> tuple[float, dict[str, float]]:
     type_weights = ROLE_TYPE_WEIGHTS[req.agent_role]
     parts = {
-        "importance": memory.importance * 0.35,
-        "confidence": memory.confidence * 0.25,
+        "importance": memory.importance * 0.25,
+        "confidence": memory.confidence * 0.18,
         "scope": SCOPE_WEIGHTS[MemoryScope(memory.scope)] * 0.2,
-        "role_type": type_weights[MemoryType(memory.memory_type)] * 0.12,
-        "keyword": _keyword_score(req.query, memory) * 0.08,
+        "role_type": type_weights[MemoryType(memory.memory_type)] * 0.1,
+        "keyword": _keyword_score(req.query, memory) * 0.06,
+        "bm25": bm25_score * 0.25,
+        "rerank": rerank_bonus * 0.18,
     }
     if embedding_score:
         parts["embedding"] = embedding_score * embedding_weight
@@ -139,6 +245,7 @@ def retrieve_memories(
     )
     candidates = list(db.scalars(stmt))
     relations_by_memory = _relations_for_candidates(db, [memory.memory_id for memory in candidates])
+    bm25_scores = _bm25_scores(req.query, candidates)
 
     filtered: list[str] = []
     scored: list[tuple[float, MemoryRecordModel]] = []
@@ -169,6 +276,8 @@ def retrieve_memories(
         score, parts = _score_memory(
             req,
             memory,
+            bm25_score=bm25_scores.get(memory.memory_id, 0.0),
+            rerank_bonus=_rerank_bonus(req.query, memory),
             embedding_score=(embedding_scores or {}).get(memory.memory_id, 0.0),
             embedding_weight=embedding_weight,
         )
@@ -193,7 +302,10 @@ def retrieve_memories(
     scored_memories = sorted(scored_memories, key=lambda item: item["score"], reverse=True)
     for item in scored_memories:
         item["selected"] = item["memory_id"] in selected_ids
-    reason = "Selected memories by scope visibility, role/type affinity, confidence, importance, and keyword overlap."
+    reason = (
+        "Selected memories by scope visibility, role/type affinity, confidence, importance, "
+        "BM25 sparse retrieval, keyword overlap, and deterministic rerank signals."
+    )
     if embedding_scores and embedding_weight:
         reason = f"{reason} Applied vector similarity scoring."
     if governance_seen:

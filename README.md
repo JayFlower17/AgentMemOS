@@ -32,6 +32,14 @@ Keep the dashboard open after the run:
 powershell -ExecutionPolicy Bypass -File examples/interview_quickstart.ps1 -Mode local -RunEval -KeepServer
 ```
 
+Script roles:
+
+```text
+scripts/start_agentmemos.ps1       Start the API/dashboard only.
+examples/interview_quickstart.ps1  Run the stable local demo/eval pipeline.
+examples/llm_eval_quickstart.ps1   Run the LLM + embedding demo/eval pipeline using .env.
+```
+
 Open:
 
 - Dashboard: http://127.0.0.1:8018/
@@ -69,6 +77,18 @@ Governance local/LLM eval:
 
 Full reports are written to `evals/reports/`.
 
+Retrieval now uses a lightweight hybrid ranking stack:
+
+```text
+metadata/base score
++ BM25 sparse score
++ keyword overlap
++ deterministic rerank signals
++ optional embedding similarity
+```
+
+Trace score parts expose `bm25`, `rerank`, and `embedding` when available.
+
 This MVP implements the first closed loop from the project plan:
 
 1. Agents submit events to `POST /events`.
@@ -87,6 +107,18 @@ The default setup is intentionally light: no Postgres or Redis is required for l
 
 ```powershell
 python -m uvicorn agentmemos.main:app --reload
+```
+
+One-command local start:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start_agentmemos.ps1 -Mode local -Port 8000 -Reload
+```
+
+One-command LLM + embedding start, using `.env` or current PowerShell environment:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start_agentmemos.ps1 -Mode llm -Port 8000 -Reload
 ```
 
 Open:

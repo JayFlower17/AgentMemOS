@@ -13,6 +13,27 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
+function Import-DotEnv {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    Get-Content -LiteralPath $Path | ForEach-Object {
+        $line = $_.Trim()
+        if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) {
+            return
+        }
+        $name, $value = $line.Split("=", 2)
+        $name = $name.Trim()
+        $value = $value.Trim().Trim('"').Trim("'")
+        if ($name) {
+            [Environment]::SetEnvironmentVariable($name, $value, "Process")
+        }
+    }
+}
+
+Import-DotEnv -Path (Join-Path $repoRoot ".env")
+
 $baseUrl = "http://127.0.0.1:$Port"
 $dbPath = if ($Mode -eq "llm") { "agentmemos_interview_llm.db" } else { "agentmemos_interview_local.db" }
 
@@ -111,4 +132,3 @@ try {
         Write-Host "Server kept running: pid $($server.Id)"
     }
 }
-
